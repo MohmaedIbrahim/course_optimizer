@@ -215,7 +215,7 @@ def show_setup_step():
         st.subheader("Professors")
         professors_input = st.text_area(
             "Enter professors (one per line):",
-            value="Jonathan\nDrJK\nPatrick\nAndres",
+            value="Jonathan\nJK\nPatrick\nAndres",
             height=150
         )
     
@@ -471,5 +471,6 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
+
 
 
