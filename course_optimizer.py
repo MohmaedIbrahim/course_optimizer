@@ -428,11 +428,11 @@ def show_results_step():
             )
             st.plotly_chart(fig, use_container_width=True)
             
-            st.subheader("⚠️ Uncovered Courses")
+            st.subheader("Uncovered Courses")
             for course in solution.get('uncovered_courses', []):
                 st.error(f"**{course}** - No assignment possible with current constraints")
         else:
-            st.success("🎉 All courses are successfully covered!")
+            st.success("All courses are successfully covered!")
         
         # Download results
         st.subheader("Download Results")
@@ -441,7 +441,7 @@ def show_results_step():
         csv_data = csv_buffer.getvalue()
         
         st.download_button(
-            label="📥 Download Assignment Results (CSV)",
+            label="Download Assignment Results (CSV)",
             data=csv_data,
             file_name="course_assignments.csv",
             mime="text/csv"
@@ -472,4 +472,5 @@ def show_results_step():
 if __name__ == "__main__":
 
     main()
+
 
