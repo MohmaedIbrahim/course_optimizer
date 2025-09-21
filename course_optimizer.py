@@ -207,7 +207,7 @@ def show_setup_step():
         st.subheader("Courses")
         courses_input = st.text_area(
             "Enter courses (one per line):",
-            value="Calculus I\nStatistics\nOperations Research\nSupply Chain\nFinance",
+            value="ACTL1\nACTL2\nACTL3\nACTL4\nACTL5",
             height=150
         )
     
@@ -215,7 +215,7 @@ def show_setup_step():
         st.subheader("Professors")
         professors_input = st.text_area(
             "Enter professors (one per line):",
-            value="Dr. Smith\nDr. Johnson\nDr. Williams\nDr. Brown",
+            value="Jonathan\nDrJK\nPatrick\nAndres",
             height=150
         )
     
@@ -471,4 +471,5 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
+
 
