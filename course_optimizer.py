@@ -167,7 +167,7 @@ def main():
         layout="wide"
     )
     
-    st.title("🎓 Course Covering Optimizer")
+    st.title("Course Covering Optimizer")
     st.markdown("Optimize faculty assignments based on preferences and constraints")
     st.markdown("---")
     
@@ -365,14 +365,14 @@ def show_results_step():
                     'Course': course,
                     'Assigned Professors': ', '.join(assigned_profs),
                     'Coverage Level': len(assigned_profs),
-                    'Status': '✅ Covered'
+                    'Status': 'Covered'
                 })
             else:
                 assignments_data.append({
                     'Course': course,
                     'Assigned Professors': 'None',
                     'Coverage Level': 0,
-                    'Status': '❌ Uncovered'
+                    'Status': 'Uncovered'
                 })
         
         assignments_df = pd.DataFrame(assignments_data)
@@ -471,3 +471,4 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
+
