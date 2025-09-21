@@ -162,11 +162,12 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="Course Covering Optimizer"
+        page_title="Course Covering Optimizer",
+        page_icon="🎓",
         layout="wide"
     )
     
-    st.title("Course Covering Optimizer")
+    st.title("🎓 Course Covering Optimizer")
     st.markdown("Optimize faculty assignments based on preferences and constraints")
     st.markdown("---")
     
@@ -206,7 +207,7 @@ def show_setup_step():
         st.subheader("Courses")
         courses_input = st.text_area(
             "Enter courses (one per line):",
-            value="ACTL1101\nACTL2101\nACTL2102\nACTL2111\nACTL2131",
+            value="Calculus I\nStatistics\nOperations Research\nSupply Chain\nFinance",
             height=150
         )
     
@@ -214,7 +215,7 @@ def show_setup_step():
         st.subheader("Professors")
         professors_input = st.text_area(
             "Enter professors (one per line):",
-            value="Andres\nJonathan\npatrick\nJK",
+            value="Dr. Smith\nDr. Johnson\nDr. Williams\nDr. Brown",
             height=150
         )
     
@@ -469,8 +470,4 @@ def show_results_step():
 
 
 if __name__ == "__main__":
-
     main()
-
-
-
