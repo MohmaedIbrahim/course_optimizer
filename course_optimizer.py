@@ -162,12 +162,11 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="Course Covering Optimizer",
-        page_icon="🎓",
+        page_title="Course Covering Optimizer"
         layout="wide"
     )
     
-    st.title("🎓 Course Covering Optimizer")
+    st.title("Course Covering Optimizer")
     st.markdown("Optimize faculty assignments based on preferences and constraints")
     st.markdown("---")
     
@@ -472,5 +471,6 @@ def show_results_step():
 if __name__ == "__main__":
 
     main()
+
 
 
