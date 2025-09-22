@@ -304,7 +304,7 @@ def show_preferences_step():
         x=pivot_df.columns,
         y=pivot_df.index,
         color_continuous_scale="RdYlGn",
-        range_color=[0, 3],
+        range_color=[0, 2],
         title="Preference Heatmap (Green = Strongly Prefer, Yellow = Can Teach, Red = Cannot Teach)"
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -472,5 +472,6 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
+
 
 
