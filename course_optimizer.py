@@ -167,7 +167,7 @@ def main():
         layout="wide"
     )
     
-    st.title("🎓 Course Covering Optimizer")
+    st.title("Course Covering Optimizer")
     st.markdown("Optimize faculty assignments based on preferences and constraints")
     st.markdown("---")
     
@@ -207,7 +207,7 @@ def show_setup_step():
         st.subheader("Courses")
         courses_input = st.text_area(
             "Enter courses (one per line):",
-            value="Calculus I\nStatistics\nOperations Research\nSupply Chain\nFinance",
+            value="ACTL1\nACTL2\nACTL3\nACTL4\nACTL5",
             height=150
         )
     
@@ -215,7 +215,7 @@ def show_setup_step():
         st.subheader("Professors")
         professors_input = st.text_area(
             "Enter professors (one per line):",
-            value="Dr. Smith\nDr. Johnson\nDr. Williams\nDr. Brown",
+            value="Jonathan\nJK\nPatrick\nAndres",
             height=150
         )
     
@@ -254,8 +254,8 @@ def show_setup_step():
 def show_preferences_step():
     """Show the preferences step."""
     st.header("Step 2: Set Preference Scores")
-    st.markdown("Set preference scores (0, 1, or 3) for each professor-course pair:")
-    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 3 = Prefer to Teach**")
+    st.markdown("Set preference scores (1-5) for each professor-course pair:")
+    st.markdown("**1 = Strongly Dislike, 3 = Neutral, 5 = Strongly Prefer**")
     
     courses = st.session_state.courses
     professors = st.session_state.professors
@@ -273,13 +273,12 @@ def show_preferences_step():
             st.subheader(f"{professor}")
             
             for course in courses:
-                # Get existing preference or default to 1
-                existing_pref = st.session_state.preferences.get((course, professor), 1)
+                # Get existing preference or default to 3
+                existing_pref = st.session_state.preferences.get((course, professor), 3)
                 
-                pref = st.selectbox(
+                pref = st.slider(
                     f"{course}",
-                    options=[0, 1, 3],
-                    index=[0, 1, 3].index(existing_pref) if existing_pref in [0, 1, 3] else 1,
+                    min_value=1, max_value=5, value=existing_pref,
                     key=f"pref_{course}_{professor}"
                 )
                 
@@ -304,7 +303,7 @@ def show_preferences_step():
         x=pivot_df.columns,
         y=pivot_df.index,
         color_continuous_scale="RdYlGn",
-        range_color=[0, 3],
+        range_color=[1, 5],
         title="Preference Heatmap (Green = High Preference, Red = Low Preference)"
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -366,14 +365,14 @@ def show_results_step():
                     'Course': course,
                     'Assigned Professors': ', '.join(assigned_profs),
                     'Coverage Level': len(assigned_profs),
-                    'Status': '✅ Covered'
+                    'Status': 'Covered'
                 })
             else:
                 assignments_data.append({
                     'Course': course,
                     'Assigned Professors': 'None',
                     'Coverage Level': 0,
-                    'Status': '❌ Uncovered'
+                    'Status': 'Uncovered'
                 })
         
         assignments_df = pd.DataFrame(assignments_data)
@@ -429,11 +428,11 @@ def show_results_step():
             )
             st.plotly_chart(fig, use_container_width=True)
             
-            st.subheader("⚠️ Uncovered Courses")
+            st.subheader("Uncovered Courses")
             for course in solution.get('uncovered_courses', []):
                 st.error(f"**{course}** - No assignment possible with current constraints")
         else:
-            st.success("🎉 All courses are successfully covered!")
+            st.success("All courses are successfully covered!")
         
         # Download results
         st.subheader("Download Results")
@@ -442,7 +441,7 @@ def show_results_step():
         csv_data = csv_buffer.getvalue()
         
         st.download_button(
-            label="📥 Download Assignment Results (CSV)",
+            label="Download Assignment Results (CSV)",
             data=csv_data,
             file_name="course_assignments.csv",
             mime="text/csv"
@@ -472,3 +471,4 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
+
