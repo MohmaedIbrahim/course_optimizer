@@ -254,8 +254,8 @@ def show_setup_step():
 def show_preferences_step():
     """Show the preferences step."""
     st.header("Step 2: Set Preference Scores")
-    st.markdown("Set preference scores (0, 1, 3) for each professor-course pair:")
-    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 3 = Strongly Prefer**")
+    st.markdown("Set preference scores (0, 1, 2) for each professor-course pair:")
+    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 2 = Strongly Prefer**")
     
     courses = st.session_state.courses
     professors = st.session_state.professors
@@ -278,8 +278,8 @@ def show_preferences_step():
                 
                 pref = st.selectbox(
                     f"{course}",
-                    options=[0, 1, 3],
-                    index=[0, 1, 3].index(existing_pref) if existing_pref in [0, 1, 3] else 1,
+                    options=[0, 1, 2],
+                    index=[0, 1, 2].index(existing_pref) if existing_pref in [0, 1, 2] else 1,
                     key=f"pref_{course}_{professor}"
                 )
                 
@@ -472,4 +472,5 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
+
 
