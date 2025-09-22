@@ -215,7 +215,7 @@ def show_setup_step():
         st.subheader("Professors")
         professors_input = st.text_area(
             "Enter professors (one per line):",
-            value="Jonathan\nJK\nPatrick\nAndres",
+             value="Jonathan\nJK\nPatrick\nAndres",
             height=150
         )
     
@@ -254,8 +254,8 @@ def show_setup_step():
 def show_preferences_step():
     """Show the preferences step."""
     st.header("Step 2: Set Preference Scores")
-    st.markdown("Set preference scores (1-5) for each professor-course pair:")
-    st.markdown("**1 = Strongly Dislike, 3 = Neutral, 5 = Strongly Prefer**")
+    st.markdown("Set preference scores (0, 1, 3) for each professor-course pair:")
+    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 3 = Strongly Prefer**")
     
     courses = st.session_state.courses
     professors = st.session_state.professors
@@ -273,12 +273,13 @@ def show_preferences_step():
             st.subheader(f"{professor}")
             
             for course in courses:
-                # Get existing preference or default to 3
-                existing_pref = st.session_state.preferences.get((course, professor), 3)
+                # Get existing preference or default to 1
+                existing_pref = st.session_state.preferences.get((course, professor), 1)
                 
-                pref = st.slider(
+                pref = st.selectbox(
                     f"{course}",
-                    min_value=1, max_value=5, value=existing_pref,
+                    options=[0, 1, 3],
+                    index=[0, 1, 3].index(existing_pref) if existing_pref in [0, 1, 3] else 1,
                     key=f"pref_{course}_{professor}"
                 )
                 
@@ -303,8 +304,8 @@ def show_preferences_step():
         x=pivot_df.columns,
         y=pivot_df.index,
         color_continuous_scale="RdYlGn",
-        range_color=[1, 5],
-        title="Preference Heatmap (Green = High Preference, Red = Low Preference)"
+        range_color=[0, 3],
+        title="Preference Heatmap (Green = Strongly Prefer, Yellow = Can Teach, Red = Cannot Teach)"
     )
     st.plotly_chart(fig, use_container_width=True)
     
