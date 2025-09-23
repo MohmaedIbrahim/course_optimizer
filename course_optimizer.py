@@ -186,9 +186,17 @@ def main():
     st.markdown("Optimize faculty assignments across terms based on course and term preferences")
     st.markdown("---")
     
+    # Input method selection
+    input_method = st.sidebar.selectbox(
+        "Choose Input Method:",
+        ["Manual Input", "Excel Upload"]
+    )
+    
     # Initialize session state
     if 'step' not in st.session_state:
         st.session_state.step = 1
+    if 'input_method' not in st.session_state:
+        st.session_state.input_method = input_method
     if 'courses' not in st.session_state:
         st.session_state.courses = []
     if 'professors' not in st.session_state:
@@ -206,15 +214,304 @@ def main():
     if 'course_allowed_terms' not in st.session_state:
         st.session_state.course_allowed_terms = {}
     
-    # Navigation
-    step = st.session_state.step
+    # Update input method if changed
+    if st.session_state.input_method != input_method:
+        st.session_state.input_method = input_method
+        st.session_state.step = 1  # Reset to step 1 when method changes
     
-    if step == 1:
-        show_setup_step()
-    elif step == 2:
-        show_preferences_step()
-    elif step == 3:
-        show_results_step()
+    # Navigation based on input method
+    if input_method == "Excel Upload":
+        if st.session_state.step == 1:
+            show_excel_upload_step()
+        elif st.session_state.step == 2:
+            show_results_step()
+    else:  # Manual Input
+        if st.session_state.step == 1:
+            show_setup_step()
+        elif st.session_state.step == 2:
+            show_preferences_step()
+        elif st.session_state.step == 3:
+            show_results_step()
+
+
+def show_excel_upload_step():
+    """Show Excel upload interface."""
+    st.header("Excel File Upload")
+    
+    # Show required Excel format
+    st.subheader("Required Excel File Format")
+    st.markdown("""
+    Your Excel file should contain the following sheets:
+    1. **Courses** - Course configuration
+    2. **Professors** - Professor configuration  
+    3. **Terms** - Term list
+    4. **CoursePreferences** - Course preference matrix
+    5. **TermPreferences** - Term preference matrix
+    6. **CourseTerms** - Which terms each course can be offered
+    """)
+    
+    # Show sample format
+    with st.expander("Click to see sample Excel format"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Courses Sheet:**")
+            courses_sample = pd.DataFrame({
+                'Course': ['ACTL1', 'ACTL2', 'ACTL3'],
+                'Classes': [2, 3, 1]
+            })
+            st.dataframe(courses_sample, hide_index=True)
+            
+            st.write("**Professors Sheet:**")
+            profs_sample = pd.DataFrame({
+                'Professor': ['Jonathan', 'JK', 'Patrick'],
+                'MaxCourses': [4, 3, 5]
+            })
+            st.dataframe(profs_sample, hide_index=True)
+            
+            st.write("**Terms Sheet:**")
+            terms_sample = pd.DataFrame({
+                'Term': ['T1', 'T2', 'T3']
+            })
+            st.dataframe(terms_sample, hide_index=True)
+        
+        with col2:
+            st.write("**CoursePreferences Sheet:**")
+            course_pref_sample = pd.DataFrame({
+                'Course': ['ACTL1', 'ACTL1', 'ACTL2'],
+                'Professor': ['Jonathan', 'JK', 'Jonathan'],
+                'Preference': [3, 1, 0]
+            })
+            st.dataframe(course_pref_sample, hide_index=True)
+            
+            st.write("**TermPreferences Sheet:**")
+            term_pref_sample = pd.DataFrame({
+                'Professor': ['Jonathan', 'Jonathan', 'JK'],
+                'Term': ['T1', 'T2', 'T1'],
+                'Preference': [3, 1, 1]
+            })
+            st.dataframe(term_pref_sample, hide_index=True)
+            
+            st.write("**CourseTerms Sheet:**")
+            course_terms_sample = pd.DataFrame({
+                'Course': ['ACTL1', 'ACTL1', 'ACTL2'],
+                'AllowedTerm': ['T1', 'T3', 'T2']
+            })
+            st.dataframe(course_terms_sample, hide_index=True)
+    
+    # Download template button
+    if st.button("Download Excel Template"):
+        template_data = create_excel_template()
+        st.download_button(
+            label="Download Template File",
+            data=template_data,
+            file_name="course_covering_template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    # File upload
+    uploaded_file = st.file_uploader(
+        "Upload your Excel file:",
+        type=['xlsx', 'xls'],
+        help="Upload an Excel file with the required sheets and format"
+    )
+    
+    if uploaded_file is not None:
+        try:
+            # Read Excel file
+            with st.spinner("Reading Excel file..."):
+                excel_data = pd.ExcelFile(uploaded_file)
+                
+                # Validate required sheets
+                required_sheets = ['Courses', 'Professors', 'Terms', 'CoursePreferences', 'TermPreferences', 'CourseTerms']
+                missing_sheets = [sheet for sheet in required_sheets if sheet not in excel_data.sheet_names]
+                
+                if missing_sheets:
+                    st.error(f"Missing required sheets: {', '.join(missing_sheets)}")
+                    return
+                
+                # Read all sheets
+                courses_df = pd.read_excel(uploaded_file, sheet_name='Courses')
+                professors_df = pd.read_excel(uploaded_file, sheet_name='Professors')
+                terms_df = pd.read_excel(uploaded_file, sheet_name='Terms')
+                course_pref_df = pd.read_excel(uploaded_file, sheet_name='CoursePreferences')
+                term_pref_df = pd.read_excel(uploaded_file, sheet_name='TermPreferences')
+                course_terms_df = pd.read_excel(uploaded_file, sheet_name='CourseTerms')
+                
+                # Process data
+                courses = courses_df['Course'].tolist()
+                professors = professors_df['Professor'].tolist()
+                terms = terms_df['Term'].tolist()
+                
+                # Course classes
+                course_classes = dict(zip(courses_df['Course'], courses_df['Classes']))
+                
+                # Professor max courses
+                professor_max_courses = dict(zip(professors_df['Professor'], professors_df['MaxCourses']))
+                
+                # Course preferences
+                course_preferences = {}
+                for _, row in course_pref_df.iterrows():
+                    course_preferences[(row['Course'], row['Professor'])] = row['Preference']
+                
+                # Term preferences
+                term_preferences = {}
+                for _, row in term_pref_df.iterrows():
+                    term_preferences[(row['Professor'], row['Term'])] = row['Preference']
+                
+                # Course allowed terms
+                course_allowed_terms = {}
+                for course in courses:
+                    course_allowed_terms[course] = []
+                for _, row in course_terms_df.iterrows():
+                    course_allowed_terms[row['Course']].append(row['AllowedTerm'])
+                
+                # Store in session state
+                st.session_state.courses = courses
+                st.session_state.professors = professors
+                st.session_state.terms = terms
+                st.session_state.course_classes = course_classes
+                st.session_state.professor_max_courses = professor_max_courses
+                st.session_state.course_preferences = course_preferences
+                st.session_state.term_preferences = term_preferences
+                st.session_state.course_allowed_terms = course_allowed_terms
+                st.session_state.max_classes = 3  # Default value
+                
+                st.success("Excel file loaded successfully!")
+                
+                # Show summary
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Courses", len(courses))
+                with col2:
+                    st.metric("Professors", len(professors))
+                with col3:
+                    st.metric("Terms", len(terms))
+                
+                # Show loaded data preview
+                st.subheader("Data Preview")
+                
+                tab1, tab2, tab3 = st.tabs(["Courses", "Professors", "Preferences"])
+                
+                with tab1:
+                    st.write("**Course Configuration:**")
+                    course_summary = pd.DataFrame({
+                        'Course': courses,
+                        'Classes': [course_classes[c] for c in courses],
+                        'Allowed Terms': [', '.join(course_allowed_terms[c]) for c in courses]
+                    })
+                    st.dataframe(course_summary, hide_index=True)
+                
+                with tab2:
+                    st.write("**Professor Configuration:**")
+                    prof_summary = pd.DataFrame({
+                        'Professor': professors,
+                        'Max Courses': [professor_max_courses[p] for p in professors]
+                    })
+                    st.dataframe(prof_summary, hide_index=True)
+                
+                with tab3:
+                    st.write("**Course Preferences Matrix:**")
+                    course_pref_matrix = pd.DataFrame(index=courses, columns=professors)
+                    for course in courses:
+                        for prof in professors:
+                            course_pref_matrix.loc[course, prof] = course_preferences.get((course, prof), 0)
+                    st.dataframe(course_pref_matrix)
+                    
+                    st.write("**Term Preferences Matrix:**")
+                    term_pref_matrix = pd.DataFrame(index=professors, columns=terms)
+                    for prof in professors:
+                        for term in terms:
+                            term_pref_matrix.loc[prof, term] = term_preferences.get((prof, term), 0)
+                    st.dataframe(term_pref_matrix)
+                
+                # Run optimization button
+                if st.button("Run Optimization", type="primary"):
+                    st.session_state.step = 2
+                    st.rerun()
+                    
+        except Exception as e:
+            st.error(f"Error reading Excel file: {str(e)}")
+            st.write("Please check that your file format matches the required template.")
+
+
+def create_excel_template():
+    """Create an Excel template file with sample data."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.utils.dataframe import dataframe_to_rows
+    
+    # Create workbook
+    wb = Workbook()
+    wb.remove(wb.active)  # Remove default sheet
+    
+    # Sample data
+    courses_data = pd.DataFrame({
+        'Course': ['ACTL1', 'ACTL2', 'ACTL3', 'ACTL4', 'ACTL5'],
+        'Classes': [2, 3, 1, 2, 3]
+    })
+    
+    professors_data = pd.DataFrame({
+        'Professor': ['Jonathan', 'JK', 'Patrick', 'Andres'],
+        'MaxCourses': [4, 3, 5, 4]
+    })
+    
+    terms_data = pd.DataFrame({
+        'Term': ['T1', 'T2', 'T3']
+    })
+    
+    # Course preferences (all combinations with default 1)
+    course_pref_data = []
+    for course in courses_data['Course']:
+        for prof in professors_data['Professor']:
+            course_pref_data.append({
+                'Course': course,
+                'Professor': prof,
+                'Preference': 1
+            })
+    course_pref_df = pd.DataFrame(course_pref_data)
+    
+    # Term preferences (all combinations with default 1)
+    term_pref_data = []
+    for prof in professors_data['Professor']:
+        for term in terms_data['Term']:
+            term_pref_data.append({
+                'Professor': prof,
+                'Term': term,
+                'Preference': 1
+            })
+    term_pref_df = pd.DataFrame(term_pref_data)
+    
+    # Course terms (default each course in T1)
+    course_terms_data = []
+    for course in courses_data['Course']:
+        course_terms_data.append({
+            'Course': course,
+            'AllowedTerm': 'T1'
+        })
+    course_terms_df = pd.DataFrame(course_terms_data)
+    
+    # Create sheets
+    sheets_data = {
+        'Courses': courses_data,
+        'Professors': professors_data,
+        'Terms': terms_data,
+        'CoursePreferences': course_pref_df,
+        'TermPreferences': term_pref_df,
+        'CourseTerms': course_terms_df
+    }
+    
+    for sheet_name, data in sheets_data.items():
+        ws = wb.create_sheet(title=sheet_name)
+        for r in dataframe_to_rows(data, index=False, header=True):
+            ws.append(r)
+    
+    # Save to bytes
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    
+    return excel_buffer.getvalue()
 
 
 def show_setup_step():
