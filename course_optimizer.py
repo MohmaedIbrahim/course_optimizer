@@ -15,8 +15,8 @@ class CourseCoveringProblem:
                  term_preferences: Dict[Tuple[str, str], float],
                  course_classes: Dict[str, int],
                  professor_max_courses: Dict[str, int],  # b_j: individual limits per professor
-                 max_classes_per_term: int = 3,
-                 max_terms_per_course: Dict[str, int] = None):
+                 course_allowed_terms: Dict[str, List[str]],  # Which terms each course can be offered
+                 max_classes_per_term: int = 3):
         
         self.courses = courses
         self.professors = professors
@@ -25,8 +25,8 @@ class CourseCoveringProblem:
         self.term_preferences = term_preferences
         self.course_classes = course_classes  # n_i: classes per course
         self.professor_max_courses = professor_max_courses  # b_j: individual limits per professor
+        self.course_allowed_terms = course_allowed_terms  # Which terms each course can be offered
         self.max_classes_term = max_classes_per_term  # L = 3
-        self.max_terms_course = max_terms_per_course or {course: len(terms) for course in courses}  # M_i
         
         self.model = None
         self.x_vars = {}  # x_ijk
@@ -37,36 +37,36 @@ class CourseCoveringProblem:
         self.model = pulp.LpProblem("Course_Covering_Multi_Term", pulp.LpMaximize)
         
         # Decision variables
-        # x_ijk: 1 if professor j teaches course i in term k
+        # x_ijk: 1 if professor j teaches course i in term k (only for allowed terms)
         self.x_vars = {}
         for course in self.courses:
             for professor in self.professors:
-                for term in self.terms:
+                for term in self.course_allowed_terms[course]:  # Only allowed terms
                     self.x_vars[(course, professor, term)] = pulp.LpVariable(
                         f"x_{course}_{professor}_{term}", cat='Binary'
                     )
         
-        # O_ik: 1 if course i is offered in term k
+        # O_ik: 1 if course i is offered in term k (only for allowed terms)
         self.o_vars = {}
         for course in self.courses:
-            for term in self.terms:
+            for term in self.course_allowed_terms[course]:  # Only allowed terms
                 self.o_vars[(course, term)] = pulp.LpVariable(
                     f"O_{course}_{term}", cat='Binary'
                 )
         
-        # Objective function: maximize course preferences + term preferences
+        # Objective function: maximize course preferences + term preferences (only for allowed terms)
         course_pref_term = pulp.lpSum([
             self.course_preferences.get((course, professor), 0) * self.x_vars[(course, professor, term)]
             for course in self.courses
             for professor in self.professors
-            for term in self.terms
+            for term in self.course_allowed_terms[course]  # Only allowed terms
         ])
         
         term_pref_term = pulp.lpSum([
             self.term_preferences.get((professor, term), 0) * self.x_vars[(course, professor, term)]
             for course in self.courses
             for professor in self.professors
-            for term in self.terms
+            for term in self.course_allowed_terms[course]  # Only allowed terms
         ])
         
         self.model += course_pref_term + term_pref_term
@@ -75,9 +75,9 @@ class CourseCoveringProblem:
     def _add_constraints(self):
         """Add all constraints to the model."""
         
-        # 1. One professor per course per term
+        # 1. One professor per course per term (only for allowed terms)
         for course in self.courses:
-            for term in self.terms:
+            for term in self.course_allowed_terms[course]:  # Only allowed terms
                 self.model += (
                     pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) <= 1,
                     f"SingleProf_{course}_{term}"
@@ -85,36 +85,32 @@ class CourseCoveringProblem:
         
         # 2. Faculty teaching load constraint (per term) - class-based
         for professor in self.professors:
-            for term in self.terms:
+            for term in self.terms:  # Check all terms for professor workload
+                term_load = pulp.lpSum([
+                    self.course_classes[course] * self.x_vars[(course, professor, term)]
+                    for course in self.courses
+                    if term in self.course_allowed_terms[course]  # Only if course allowed in this term
+                ])
                 self.model += (
-                    pulp.lpSum([
-                        self.course_classes[course] * self.x_vars[(course, professor, term)]
-                        for course in self.courses
-                    ]) <= self.max_classes_term,
+                    term_load <= self.max_classes_term,
                     f"ClassLoad_{professor}_{term}"
                 )
         
         # 3. Faculty teaching load constraint (total courses) - individual limits
         for professor in self.professors:
+            total_courses = pulp.lpSum([
+                self.x_vars[(course, professor, term)]
+                for course in self.courses
+                for term in self.course_allowed_terms[course]  # Only allowed terms
+            ])
             self.model += (
-                pulp.lpSum([
-                    self.x_vars[(course, professor, term)]
-                    for course in self.courses
-                    for term in self.terms
-                ]) <= self.professor_max_courses[professor],  # Use individual limit b_j
+                total_courses <= self.professor_max_courses[professor],  # Use individual limit b_j
                 f"TotalCourses_{professor}"
             )
         
-        # 4. Multi-term offering constraint
+        # 4. Course offering constraint: O_ik = sum of x_ijk (only for allowed terms)
         for course in self.courses:
-            self.model += (
-                pulp.lpSum([self.o_vars[(course, term)] for term in self.terms]) <= self.max_terms_course[course],
-                f"MultiTerm_{course}"
-            )
-        
-        # 5. Course offering constraint: O_ik = sum of x_ijk
-        for course in self.courses:
-            for term in self.terms:
+            for term in self.course_allowed_terms[course]:  # Only allowed terms
                 self.model += (
                     pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) == self.o_vars[(course, term)],
                     f"Offering_{course}_{term}"
@@ -148,25 +144,25 @@ class CourseCoveringProblem:
         course_offerings = {}  # {course: [terms]}
         professor_loads = {prof: {'courses': 0, 'classes_per_term': {term: 0 for term in self.terms}} for prof in self.professors}
         
-        # Extract assignments
+        # Extract assignments (only for allowed terms)
         for course in self.courses:
-            for term in self.terms:
+            for term in self.course_allowed_terms[course]:  # Only allowed terms
                 for professor in self.professors:
                     if self.x_vars[(course, professor, term)].varValue == 1:
                         assignments[(course, term)] = professor
                         professor_loads[professor]['courses'] += 1
                         professor_loads[professor]['classes_per_term'][term] += self.course_classes[course]
         
-        # Extract course offerings
+        # Extract course offerings (only for allowed terms)
         for course in self.courses:
             offered_terms = []
-            for term in self.terms:
+            for term in self.course_allowed_terms[course]:  # Only allowed terms
                 if self.o_vars[(course, term)].varValue == 1:
                     offered_terms.append(term)
             if offered_terms:
                 course_offerings[course] = offered_terms
         
-        # Find uncovered courses (courses not offered in any term)
+        # Find uncovered courses (courses not offered in any allowed term)
         uncovered_courses = [course for course in self.courses if course not in course_offerings]
         
         return {
@@ -207,6 +203,8 @@ def main():
         st.session_state.course_classes = {}
     if 'professor_max_courses' not in st.session_state:
         st.session_state.professor_max_courses = {}
+    if 'course_allowed_terms' not in st.session_state:
+        st.session_state.course_allowed_terms = {}
     
     # Navigation
     step = st.session_state.step
@@ -252,28 +250,50 @@ def show_setup_step():
     # Course classes configuration
     st.subheader("Course Configuration")
     courses_preview = [course.strip() for course in courses_input.split('\n') if course.strip()]
+    terms_preview = [term.strip() for term in terms_input.split('\n') if term.strip()]
     
-    if courses_preview:
-        st.write("Set the number of classes for each course:")
+    if courses_preview and terms_preview:
+        st.write("Configure each course:")
         course_classes = {}
-        max_terms = {}
+        course_allowed_terms = {}
         
-        cols = st.columns(min(3, len(courses_preview)))
+        cols = st.columns(min(2, len(courses_preview)))
         for idx, course in enumerate(courses_preview):
             with cols[idx % len(cols)]:
+                st.write(f"**{course}**")
+                
+                # Number of classes for this course
                 classes = st.number_input(
-                    f"Classes for {course}:",
+                    f"Classes:",
                     min_value=1, max_value=5, value=2,
                     key=f"classes_{course}"
                 )
                 course_classes[course] = classes
                 
-                max_term = st.number_input(
-                    f"Max terms for {course}:",
-                    min_value=1, max_value=3, value=1,
-                    key=f"max_terms_{course}"
+                # Which terms this course can be offered
+                allowed_terms = st.multiselect(
+                    f"Allowed terms:",
+                    options=terms_preview,
+                    default=[terms_preview[0]],  # Default to first term
+                    key=f"allowed_terms_{course}"
                 )
-                max_terms[course] = max_term
+                course_allowed_terms[course] = allowed_terms
+                
+                if not allowed_terms:
+                    st.warning(f"Please select at least one term for {course}")
+        
+        # Show course-term matrix
+        if course_classes and course_allowed_terms:
+            st.write("**Course-Term Availability Matrix:**")
+            matrix_data = []
+            for course in courses_preview:
+                row_data = {'Course': course, 'Classes': course_classes[course]}
+                for term in terms_preview:
+                    row_data[term] = '✓' if term in course_allowed_terms.get(course, []) else '✗'
+                matrix_data.append(row_data)
+            
+            matrix_df = pd.DataFrame(matrix_data)
+            st.dataframe(matrix_df, use_container_width=True, hide_index=True)
     
     # Professor loading configuration
     st.subheader("Professor Loading Configuration")
@@ -308,12 +328,14 @@ def show_setup_step():
         
         if not courses or not professors or not terms:
             st.error("Please enter at least one course, professor, and term.")
+        elif not all(course_allowed_terms.values()):
+            st.error("Please select allowed terms for all courses.")
         else:
             st.session_state.courses = courses
             st.session_state.professors = professors
             st.session_state.terms = terms
             st.session_state.course_classes = course_classes
-            st.session_state.max_terms_course = max_terms
+            st.session_state.course_allowed_terms = course_allowed_terms
             st.session_state.professor_max_courses = professor_max_courses
             st.session_state.max_classes = max_classes
             st.session_state.step = 2
@@ -417,7 +439,7 @@ def show_results_step():
     course_preferences = st.session_state.course_preferences
     term_preferences = st.session_state.term_preferences
     course_classes = st.session_state.course_classes
-    max_terms_course = st.session_state.max_terms_course
+    course_allowed_terms = st.session_state.course_allowed_terms
     professor_max_courses = st.session_state.professor_max_courses
     max_classes = st.session_state.max_classes
     
@@ -431,8 +453,8 @@ def show_results_step():
             term_preferences=term_preferences,
             course_classes=course_classes,
             professor_max_courses=professor_max_courses,  # Individual limits per professor
-            max_classes_per_term=max_classes,
-            max_terms_per_course=max_terms_course
+            course_allowed_terms=course_allowed_terms,  # Specific allowed terms per course
+            max_classes_per_term=max_classes
         )
         
         solution = problem.solve()
