@@ -436,14 +436,8 @@ def show_excel_upload_step():
 
 
 def create_excel_template():
-    """Create an Excel template file with sample data."""
+    """Create an Excel template file with sample data using pandas."""
     import io
-    from openpyxl import Workbook
-    from openpyxl.utils.dataframe import dataframe_to_rows
-    
-    # Create workbook
-    wb = Workbook()
-    wb.remove(wb.active)  # Remove default sheet
     
     # Sample data
     courses_data = pd.DataFrame({
@@ -460,7 +454,7 @@ def create_excel_template():
         'Term': ['T1', 'T2', 'T3']
     })
     
-    # Course preferences (all combinations with default 1)
+    # Course preferences (sample data)
     course_pref_data = []
     for course in courses_data['Course']:
         for prof in professors_data['Professor']:
@@ -471,7 +465,7 @@ def create_excel_template():
             })
     course_pref_df = pd.DataFrame(course_pref_data)
     
-    # Term preferences (all combinations with default 1)
+    # Term preferences (sample data)
     term_pref_data = []
     for prof in professors_data['Professor']:
         for term in terms_data['Term']:
@@ -491,26 +485,18 @@ def create_excel_template():
         })
     course_terms_df = pd.DataFrame(course_terms_data)
     
-    # Create sheets
-    sheets_data = {
-        'Courses': courses_data,
-        'Professors': professors_data,
-        'Terms': terms_data,
-        'CoursePreferences': course_pref_df,
-        'TermPreferences': term_pref_df,
-        'CourseTerms': course_terms_df
-    }
-    
-    for sheet_name, data in sheets_data.items():
-        ws = wb.create_sheet(title=sheet_name)
-        for r in dataframe_to_rows(data, index=False, header=True):
-            ws.append(r)
-    
-    # Save to bytes
+    # Create Excel file using pandas
     excel_buffer = io.BytesIO()
-    wb.save(excel_buffer)
-    excel_buffer.seek(0)
     
+    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+        courses_data.to_excel(writer, sheet_name='Courses', index=False)
+        professors_data.to_excel(writer, sheet_name='Professors', index=False)
+        terms_data.to_excel(writer, sheet_name='Terms', index=False)
+        course_pref_df.to_excel(writer, sheet_name='CoursePreferences', index=False)
+        term_pref_df.to_excel(writer, sheet_name='TermPreferences', index=False)
+        course_terms_df.to_excel(writer, sheet_name='CourseTerms', index=False)
+    
+    excel_buffer.seek(0)
     return excel_buffer.getvalue()
 
 
