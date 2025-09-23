@@ -8,97 +8,117 @@ from typing import Dict, List, Tuple
 import io
 
 class CourseCoveringProblem:
-    """Course covering optimization problem solver."""
+    """Course covering optimization problem solver with terms and class-based constraints."""
     
-    def __init__(self, courses: List[str], professors: List[str], 
-                 preferences: Dict[Tuple[str, str], float],
-                 max_load_per_professor: int = 2,
-                 min_professors_per_course: int = 1):
+    def __init__(self, courses: List[str], professors: List[str], terms: List[str],
+                 course_preferences: Dict[Tuple[str, str], float],
+                 term_preferences: Dict[Tuple[str, str], float],
+                 course_classes: Dict[str, int],
+                 max_courses_per_professor: int = 4,
+                 max_classes_per_term: int = 3,
+                 max_terms_per_course: Dict[str, int] = None):
         
         self.courses = courses
         self.professors = professors
-        self.preferences = preferences
-        self.max_load = max_load_per_professor
-        self.min_coverage = min_professors_per_course
-        
-        # All professors are qualified for all courses
-        self.qualified_faculty = {course: professors.copy() for course in courses}
+        self.terms = terms
+        self.course_preferences = course_preferences
+        self.term_preferences = term_preferences
+        self.course_classes = course_classes  # n_i: classes per course
+        self.max_courses = max_courses_per_professor  # b_j
+        self.max_classes_term = max_classes_per_term  # L = 3
+        self.max_terms_course = max_terms_per_course or {course: len(terms) for course in courses}  # M_i
         
         self.model = None
-        self.x_vars = {}
-        self.y_vars = {}
+        self.x_vars = {}  # x_ijk
+        self.o_vars = {}  # O_ik
         
     def build_model(self):
         """Build the optimization model."""
-        self.model = pulp.LpProblem("Course_Covering", pulp.LpMaximize)
+        self.model = pulp.LpProblem("Course_Covering_Multi_Term", pulp.LpMaximize)
         
         # Decision variables
+        # x_ijk: 1 if professor j teaches course i in term k
         self.x_vars = {}
         for course in self.courses:
             for professor in self.professors:
-                self.x_vars[(course, professor)] = pulp.LpVariable(
-                    f"x_{course}_{professor}", cat='Binary'
-                )
+                for term in self.terms:
+                    self.x_vars[(course, professor, term)] = pulp.LpVariable(
+                        f"x_{course}_{professor}_{term}", cat='Binary'
+                    )
         
-        self.y_vars = {}
+        # O_ik: 1 if course i is offered in term k
+        self.o_vars = {}
         for course in self.courses:
-            for k in range(1, len(self.professors) + 1):
-                self.y_vars[(course, k)] = pulp.LpVariable(
-                    f"y_{course}_{k}", cat='Binary'
+            for term in self.terms:
+                self.o_vars[(course, term)] = pulp.LpVariable(
+                    f"O_{course}_{term}", cat='Binary'
                 )
         
-        # Objective function
-        coverage_term = pulp.lpSum([
-            k * self.y_vars[(course, k)]
-            for course in self.courses
-            for k in range(1, len(self.professors) + 1)
-        ])
-        
-        preference_term = pulp.lpSum([
-            self.preferences.get((course, professor), 0) * self.x_vars[(course, professor)]
+        # Objective function: maximize course preferences + term preferences
+        course_pref_term = pulp.lpSum([
+            self.course_preferences.get((course, professor), 0) * self.x_vars[(course, professor, term)]
             for course in self.courses
             for professor in self.professors
+            for term in self.terms
         ])
         
-        self.model += 1000 * coverage_term + preference_term
+        term_pref_term = pulp.lpSum([
+            self.term_preferences.get((professor, term), 0) * self.x_vars[(course, professor, term)]
+            for course in self.courses
+            for professor in self.professors
+            for term in self.terms
+        ])
+        
+        self.model += course_pref_term + term_pref_term
         self._add_constraints()
         
     def _add_constraints(self):
-        """Add constraints to the model."""
-        # Coverage constraints
-        for course in self.courses:
-            assigned_professors = pulp.lpSum([
-                self.x_vars[(course, prof)] for prof in self.professors
-            ])
-            
-            required_coverage = pulp.lpSum([
-                k * self.y_vars[(course, k)]
-                for k in range(1, len(self.professors) + 1)
-            ])
-            
-            self.model += assigned_professors >= required_coverage
-            
-            # Exactly one coverage level per course
-            coverage_levels = pulp.lpSum([
-                self.y_vars[(course, k)]
-                for k in range(1, len(self.professors) + 1)
-            ])
-            self.model += coverage_levels == 1
+        """Add all constraints to the model."""
         
-        # Capacity constraints
+        # 1. One professor per course per term
+        for course in self.courses:
+            for term in self.terms:
+                self.model += (
+                    pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) <= 1,
+                    f"SingleProf_{course}_{term}"
+                )
+        
+        # 2. Faculty teaching load constraint (per term) - class-based
         for professor in self.professors:
-            assigned_courses = pulp.lpSum([
-                self.x_vars[(course, professor)] for course in self.courses
-            ])
-            self.model += assigned_courses <= self.max_load
+            for term in self.terms:
+                self.model += (
+                    pulp.lpSum([
+                        self.course_classes[course] * self.x_vars[(course, professor, term)]
+                        for course in self.courses
+                    ]) <= self.max_classes_term,
+                    f"ClassLoad_{professor}_{term}"
+                )
         
-        # Minimum coverage constraint
+        # 3. Faculty teaching load constraint (total courses)
+        for professor in self.professors:
+            self.model += (
+                pulp.lpSum([
+                    self.x_vars[(course, professor, term)]
+                    for course in self.courses
+                    for term in self.terms
+                ]) <= self.max_courses,
+                f"TotalCourses_{professor}"
+            )
+        
+        # 4. Multi-term offering constraint
         for course in self.courses:
-            min_coverage = pulp.lpSum([
-                k * self.y_vars[(course, k)]
-                for k in range(self.min_coverage, len(self.professors) + 1)
-            ])
-            self.model += min_coverage >= self.min_coverage
+            self.model += (
+                pulp.lpSum([self.o_vars[(course, term)] for term in self.terms]) <= self.max_terms_course[course],
+                f"MultiTerm_{course}"
+            )
+        
+        # 5. Course offering constraint: O_ik = sum of x_ijk
+        for course in self.courses:
+            for term in self.terms:
+                self.model += (
+                    pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) == self.o_vars[(course, term)],
+                    f"Offering_{course}_{term}"
+                )
     
     def solve(self):
         """Solve the optimization problem."""
@@ -117,44 +137,43 @@ class CourseCoveringProblem:
                 'status': status,
                 'objective_value': None,
                 'assignments': {},
-                'coverage': {},
-                'uncovered_courses': list(self.courses)
+                'course_offerings': {},
+                'uncovered_courses': list(self.courses),
+                'professor_loads': {}
             }
     
     def _extract_solution(self):
         """Extract solution from solved model."""
-        assignments = {}
-        coverage = {}
-        uncovered_courses = []
+        assignments = {}  # {(course, term): professor}
+        course_offerings = {}  # {course: [terms]}
+        professor_loads = {prof: {'courses': 0, 'classes_per_term': {term: 0 for term in self.terms}} for prof in self.professors}
         
+        # Extract assignments
         for course in self.courses:
-            assigned_profs = []
-            for professor in self.professors:
-                if self.x_vars[(course, professor)].varValue == 1:
-                    assigned_profs.append(professor)
-            if assigned_profs:
-                assignments[course] = assigned_profs
+            for term in self.terms:
+                for professor in self.professors:
+                    if self.x_vars[(course, professor, term)].varValue == 1:
+                        assignments[(course, term)] = professor
+                        professor_loads[professor]['courses'] += 1
+                        professor_loads[professor]['classes_per_term'][term] += self.course_classes[course]
         
+        # Extract course offerings
         for course in self.courses:
-            for k in range(1, len(self.professors) + 1):
-                if self.y_vars[(course, k)].varValue == 1:
-                    coverage[course] = k
-                    break
+            offered_terms = []
+            for term in self.terms:
+                if self.o_vars[(course, term)].varValue == 1:
+                    offered_terms.append(term)
+            if offered_terms:
+                course_offerings[course] = offered_terms
         
-        for course in self.courses:
-            if course not in assignments or len(assignments[course]) == 0:
-                uncovered_courses.append(course)
-        
-        professor_loads = {prof: 0 for prof in self.professors}
-        for course, profs in assignments.items():
-            for prof in profs:
-                professor_loads[prof] += 1
+        # Find uncovered courses (courses not offered in any term)
+        uncovered_courses = [course for course in self.courses if course not in course_offerings]
         
         return {
             'status': 'Optimal',
             'objective_value': pulp.value(self.model.objective),
             'assignments': assignments,
-            'coverage': coverage,
+            'course_offerings': course_offerings,
             'uncovered_courses': uncovered_courses,
             'professor_loads': professor_loads
         }
@@ -162,13 +181,13 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="Course Covering Optimizer",
+        page_title="Course Covering Optimizer - Multi Term",
         page_icon="🎓",
         layout="wide"
     )
     
-    st.title("Course Covering Optimizer")
-    st.markdown("Optimize faculty assignments based on preferences and constraints")
+    st.title("🎓 Course Covering Optimizer - Multi Term")
+    st.markdown("Optimize faculty assignments across terms based on course and term preferences")
     st.markdown("---")
     
     # Initialize session state
@@ -178,75 +197,114 @@ def main():
         st.session_state.courses = []
     if 'professors' not in st.session_state:
         st.session_state.professors = []
-    if 'preferences' not in st.session_state:
-        st.session_state.preferences = {}
+    if 'terms' not in st.session_state:
+        st.session_state.terms = []
+    if 'course_preferences' not in st.session_state:
+        st.session_state.course_preferences = {}
+    if 'term_preferences' not in st.session_state:
+        st.session_state.term_preferences = {}
+    if 'course_classes' not in st.session_state:
+        st.session_state.course_classes = {}
     
     # Navigation
     step = st.session_state.step
     
-    # Step 1: Setup
     if step == 1:
         show_setup_step()
-    
-    # Step 2: Preferences
     elif step == 2:
         show_preferences_step()
-    
-    # Step 3: Results
     elif step == 3:
         show_results_step()
 
 
 def show_setup_step():
     """Show the setup step."""
-    st.header("Step 1: Setup Courses and Professors")
+    st.header("Step 1: Setup Courses, Professors, and Terms")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("Courses")
         courses_input = st.text_area(
             "Enter courses (one per line):",
             value="ACTL1\nACTL2\nACTL3\nACTL4\nACTL5",
-            height=150
+            height=120
         )
     
     with col2:
         st.subheader("Professors")
         professors_input = st.text_area(
             "Enter professors (one per line):",
-             value="Jonathan\nJK\nPatrick\nAndres",
-            height=150
+            value="Jonathan\nJK\nPatrick\nAndres",
+            height=120
         )
     
+    with col3:
+        st.subheader("Terms")
+        terms_input = st.text_area(
+            "Enter terms (one per line):",
+            value="Fall\nSpring\nSummer",
+            height=120
+        )
+    
+    # Course classes configuration
+    st.subheader("Course Configuration")
+    courses_preview = [course.strip() for course in courses_input.split('\n') if course.strip()]
+    
+    if courses_preview:
+        st.write("Set the number of classes for each course:")
+        course_classes = {}
+        max_terms = {}
+        
+        cols = st.columns(min(3, len(courses_preview)))
+        for idx, course in enumerate(courses_preview):
+            with cols[idx % len(cols)]:
+                classes = st.number_input(
+                    f"Classes for {course}:",
+                    min_value=1, max_value=5, value=2,
+                    key=f"classes_{course}"
+                )
+                course_classes[course] = classes
+                
+                max_term = st.number_input(
+                    f"Max terms for {course}:",
+                    min_value=1, max_value=3, value=1,
+                    key=f"max_terms_{course}"
+                )
+                max_terms[course] = max_term
+    
     # Parameters
-    st.subheader("Parameters")
+    st.subheader("Global Parameters")
     col1, col2 = st.columns(2)
     
     with col1:
-        max_load = st.number_input(
-            "Maximum courses per professor:",
-            min_value=1, max_value=10, value=2
+        max_courses = st.number_input(
+            "Maximum courses per professor (total):",
+            min_value=1, max_value=10, value=4
         )
     
     with col2:
-        min_coverage = st.number_input(
-            "Minimum professors per course:",
-            min_value=1, max_value=5, value=1
+        max_classes = st.number_input(
+            "Maximum classes per professor per term:",
+            min_value=1, max_value=6, value=3
         )
     
     # Process input and move to next step
     if st.button("Next: Set Preferences", type="primary"):
         courses = [course.strip() for course in courses_input.split('\n') if course.strip()]
         professors = [prof.strip() for prof in professors_input.split('\n') if prof.strip()]
+        terms = [term.strip() for term in terms_input.split('\n') if term.strip()]
         
-        if not courses or not professors:
-            st.error("Please enter at least one course and one professor.")
+        if not courses or not professors or not terms:
+            st.error("Please enter at least one course, professor, and term.")
         else:
             st.session_state.courses = courses
             st.session_state.professors = professors
-            st.session_state.max_load = max_load
-            st.session_state.min_coverage = min_coverage
+            st.session_state.terms = terms
+            st.session_state.course_classes = course_classes
+            st.session_state.max_terms_course = max_terms
+            st.session_state.max_courses = max_courses
+            st.session_state.max_classes = max_classes
             st.session_state.step = 2
             st.rerun()
 
@@ -254,60 +312,76 @@ def show_setup_step():
 def show_preferences_step():
     """Show the preferences step."""
     st.header("Step 2: Set Preference Scores")
-    st.markdown("Set preference scores (0, 1, 2) for each professor-course pair:")
-    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 2 = Strongly Prefer**")
     
     courses = st.session_state.courses
     professors = st.session_state.professors
+    terms = st.session_state.terms
     
-    # Create preference matrix
-    preferences_data = []
+    # Course Preferences
+    st.subheader("Course Preferences")
+    st.markdown("Set how much each professor prefers to teach each course:")
+    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 3 = Strongly Prefer**")
     
-    # Use columns for better layout
-    n_cols = min(3, len(professors))  # Max 3 columns for readability
-    cols = st.columns(n_cols)
+    # Create course preference matrix
+    course_pref_data = []
     
-    col_idx = 0
     for professor in professors:
-        with cols[col_idx % n_cols]:
-            st.subheader(f"{professor}")
-            
-            for course in courses:
-                # Get existing preference or default to 1
-                existing_pref = st.session_state.preferences.get((course, professor), 1)
-                
+        st.write(f"**{professor}'s Course Preferences:**")
+        cols = st.columns(min(4, len(courses)))
+        
+        for idx, course in enumerate(courses):
+            with cols[idx % len(cols)]:
+                existing_pref = st.session_state.course_preferences.get((course, professor), 1)
                 pref = st.selectbox(
                     f"{course}",
-                    options=[0, 1, 2],
-                    index=[0, 1, 2].index(existing_pref) if existing_pref in [0, 1, 2] else 1,
-                    key=f"pref_{course}_{professor}"
+                    options=[0, 1, 3],
+                    index=[0, 1, 3].index(existing_pref) if existing_pref in [0, 1, 3] else 1,
+                    key=f"course_pref_{course}_{professor}"
                 )
-                
-                st.session_state.preferences[(course, professor)] = pref
-                preferences_data.append({
+                st.session_state.course_preferences[(course, professor)] = pref
+                course_pref_data.append({
                     'Course': course,
                     'Professor': professor,
                     'Preference': pref
                 })
+    
+    # Term Preferences
+    st.subheader("Term Preferences")
+    st.markdown("Set how much each professor prefers to teach in each term:")
+    
+    for professor in professors:
+        st.write(f"**{professor}'s Term Preferences:**")
+        cols = st.columns(len(terms))
         
-        col_idx += 1
+        for idx, term in enumerate(terms):
+            with cols[idx]:
+                existing_pref = st.session_state.term_preferences.get((professor, term), 1)
+                pref = st.selectbox(
+                    f"{term}",
+                    options=[0, 1, 3],
+                    index=[0, 1, 3].index(existing_pref) if existing_pref in [0, 1, 3] else 1,
+                    key=f"term_pref_{professor}_{term}"
+                )
+                st.session_state.term_preferences[(professor, term)] = pref
     
-    # Show preference matrix
-    st.subheader("Preference Matrix Overview")
-    pref_df = pd.DataFrame(preferences_data)
-    pivot_df = pref_df.pivot(index='Course', columns='Professor', values='Preference')
+    # Show preference matrices
+    st.subheader("Preference Overview")
     
-    # Color code the matrix
-    fig = px.imshow(
-        pivot_df.values,
-        labels=dict(x="Professor", y="Course", color="Preference"),
-        x=pivot_df.columns,
-        y=pivot_df.index,
-        color_continuous_scale="RdYlGn",
-        range_color=[0, 2],
-        title="Preference Heatmap (Green = Strongly Prefer, Yellow = Can Teach, Red = Cannot Teach)"
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    # Course preference heatmap
+    if course_pref_data:
+        course_pref_df = pd.DataFrame(course_pref_data)
+        course_pivot = course_pref_df.pivot(index='Course', columns='Professor', values='Preference')
+        
+        fig1 = px.imshow(
+            course_pivot.values,
+            labels=dict(x="Professor", y="Course", color="Course Preference"),
+            x=course_pivot.columns,
+            y=course_pivot.index,
+            color_continuous_scale="RdYlGn",
+            range_color=[0, 3],
+            title="Course Preference Matrix"
+        )
+        st.plotly_chart(fig1, use_container_width=True)
     
     # Navigation buttons
     col1, col2 = st.columns(2)
@@ -328,18 +402,26 @@ def show_results_step():
     
     courses = st.session_state.courses
     professors = st.session_state.professors
-    preferences = st.session_state.preferences
-    max_load = st.session_state.max_load
-    min_coverage = st.session_state.min_coverage
+    terms = st.session_state.terms
+    course_preferences = st.session_state.course_preferences
+    term_preferences = st.session_state.term_preferences
+    course_classes = st.session_state.course_classes
+    max_terms_course = st.session_state.max_terms_course
+    max_courses = st.session_state.max_courses
+    max_classes = st.session_state.max_classes
     
     # Run optimization
     with st.spinner("Running optimization..."):
         problem = CourseCoveringProblem(
             courses=courses,
             professors=professors,
-            preferences=preferences,
-            max_load_per_professor=max_load,
-            min_professors_per_course=min_coverage
+            terms=terms,
+            course_preferences=course_preferences,
+            term_preferences=term_preferences,
+            course_classes=course_classes,
+            max_courses_per_professor=max_courses,
+            max_classes_per_term=max_classes,
+            max_terms_per_course=max_terms_course
         )
         
         solution = problem.solve()
@@ -356,104 +438,112 @@ def show_results_step():
     
     if solution['status'] == 'Optimal':
         
-        # Course assignments
-        st.subheader("Course Assignments")
+        # Course assignments by term
+        st.subheader("Course Assignments by Term")
+        
         assignments_data = []
-        for course in courses:
-            assigned_profs = solution['assignments'].get(course, [])
-            if assigned_profs:
-                assignments_data.append({
-                    'Course': course,
-                    'Assigned Professors': ', '.join(assigned_profs),
-                    'Coverage Level': len(assigned_profs),
-                    'Status': 'Covered'
-                })
+        for term in terms:
+            term_assignments = []
+            for course in courses:
+                if (course, term) in solution['assignments']:
+                    professor = solution['assignments'][(course, term)]
+                    classes = course_classes[course]
+                    term_assignments.append(f"{course} → {professor} ({classes} classes)")
+                    assignments_data.append({
+                        'Term': term,
+                        'Course': course,
+                        'Professor': professor,
+                        'Classes': classes,
+                        'Status': 'Assigned'
+                    })
+            
+            if term_assignments:
+                st.write(f"**{term}:**")
+                for assignment in term_assignments:
+                    st.write(f"  • {assignment}")
             else:
-                assignments_data.append({
-                    'Course': course,
-                    'Assigned Professors': 'None',
-                    'Coverage Level': 0,
-                    'Status': 'Uncovered'
-                })
+                st.write(f"**{term}:** No courses assigned")
         
-        assignments_df = pd.DataFrame(assignments_data)
-        st.dataframe(assignments_df, use_container_width=True, hide_index=True)
+        # Assignments dataframe
+        if assignments_data:
+            assignments_df = pd.DataFrame(assignments_data)
+            st.dataframe(assignments_df, use_container_width=True, hide_index=True)
         
-        # Professor workloads
-        st.subheader("Professor Workload Distribution")
+        # Professor workload analysis
+        st.subheader("Professor Workload Analysis")
+        
         workload_data = []
-        for prof in professors:
-            load = solution['professor_loads'].get(prof, 0)
-            assigned_courses = [
-                course for course, profs in solution['assignments'].items() 
-                if prof in profs
-            ]
-            workload_data.append({
-                'Professor': prof,
-                'Courses Assigned': load,
-                'Course Names': ', '.join(assigned_courses) if assigned_courses else 'None',
-                'Utilization %': (load / max_load) * 100
-            })
+        for professor in professors:
+            prof_data = solution['professor_loads'][professor]
+            total_courses = prof_data['courses']
+            
+            for term in terms:
+                classes_in_term = prof_data['classes_per_term'][term]
+                workload_data.append({
+                    'Professor': professor,
+                    'Term': term,
+                    'Classes': classes_in_term,
+                    'Utilization %': (classes_in_term / max_classes) * 100
+                })
         
         workload_df = pd.DataFrame(workload_data)
         
-        # Workload chart
-        fig = px.bar(
-            workload_df, 
-            x='Professor', 
-            y='Courses Assigned',
-            title='Teaching Load per Professor',
-            color='Utilization %',
-            color_continuous_scale='RdYlGn_r',
-            hover_data=['Course Names']
+        # Workload heatmap
+        workload_pivot = workload_df.pivot(index='Professor', columns='Term', values='Classes')
+        fig2 = px.imshow(
+            workload_pivot.values,
+            labels=dict(x="Term", y="Professor", color="Classes"),
+            x=workload_pivot.columns,
+            y=workload_pivot.index,
+            color_continuous_scale="Blues",
+            title="Professor Workload by Term (Classes)"
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True)
         
-        # Professor details table
-        st.subheader("Detailed Professor Assignments")
-        st.dataframe(workload_df, use_container_width=True, hide_index=True)
+        # Course offerings summary
+        st.subheader("Course Offerings Summary")
         
-        # Coverage analysis
-        st.subheader("Coverage Analysis")
-        coverage_data = {
-            'Covered': len([c for c in courses if c in solution['assignments']]),
-            'Uncovered': len(solution.get('uncovered_courses', []))
-        }
-        
-        if coverage_data['Uncovered'] > 0:
-            fig = px.pie(
-                values=list(coverage_data.values()),
-                names=list(coverage_data.keys()),
-                title='Course Coverage Status',
-                color_discrete_map={'Covered': 'green', 'Uncovered': 'red'}
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        if solution['course_offerings']:
+            offering_data = []
+            for course, offered_terms in solution['course_offerings'].items():
+                offering_data.append({
+                    'Course': course,
+                    'Offered Terms': ', '.join(offered_terms),
+                    'Number of Terms': len(offered_terms),
+                    'Total Classes': course_classes[course]
+                })
             
-            st.subheader("Uncovered Courses")
-            for course in solution.get('uncovered_courses', []):
-                st.error(f"**{course}** - No assignment possible with current constraints")
+            offerings_df = pd.DataFrame(offering_data)
+            st.dataframe(offerings_df, use_container_width=True, hide_index=True)
+        
+        # Uncovered courses
+        if solution.get('uncovered_courses'):
+            st.subheader("⚠️ Uncovered Courses")
+            for course in solution['uncovered_courses']:
+                st.error(f"**{course}** ({course_classes[course]} classes) - No assignment possible")
         else:
-            st.success("All courses are successfully covered!")
+            st.success("🎉 All courses are covered!")
         
         # Download results
         st.subheader("Download Results")
-        csv_buffer = io.StringIO()
-        assignments_df.to_csv(csv_buffer, index=False)
-        csv_data = csv_buffer.getvalue()
-        
-        st.download_button(
-            label="Download Assignment Results (CSV)",
-            data=csv_data,
-            file_name="course_assignments.csv",
-            mime="text/csv"
-        )
+        if assignments_data:
+            csv_buffer = io.StringIO()
+            assignments_df.to_csv(csv_buffer, index=False)
+            csv_data = csv_buffer.getvalue()
+            
+            st.download_button(
+                label="📥 Download Assignment Results (CSV)",
+                data=csv_data,
+                file_name="multi_term_course_assignments.csv",
+                mime="text/csv"
+            )
         
     else:
         st.error(f"Optimization failed: {solution['status']}")
         st.write("Possible reasons:")
-        st.write("- Constraints are too restrictive")
-        st.write("- Not enough professors for the required coverage")
-        st.write("- Conflicting requirements")
+        st.write("- Class load constraints are too restrictive (try increasing max classes per term)")
+        st.write("- Not enough professors for the required course coverage")
+        st.write("- Preference scores are too low (all 0s)")
     
     # Navigation
     col1, col2 = st.columns(2)
@@ -472,6 +562,3 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
-
-
-
