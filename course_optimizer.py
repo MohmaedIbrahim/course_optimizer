@@ -14,7 +14,7 @@ class CourseCoveringProblem:
                  course_preferences: Dict[Tuple[str, str], float],
                  term_preferences: Dict[Tuple[str, str], float],
                  course_classes: Dict[str, int],
-                 max_courses_per_professor: int = 4,
+                 professor_max_courses: Dict[str, int],  # b_j: individual limits per professor
                  max_classes_per_term: int = 3,
                  max_terms_per_course: Dict[str, int] = None):
         
@@ -24,7 +24,7 @@ class CourseCoveringProblem:
         self.course_preferences = course_preferences
         self.term_preferences = term_preferences
         self.course_classes = course_classes  # n_i: classes per course
-        self.max_courses = max_courses_per_professor  # b_j
+        self.professor_max_courses = professor_max_courses  # b_j: individual limits per professor
         self.max_classes_term = max_classes_per_term  # L = 3
         self.max_terms_course = max_terms_per_course or {course: len(terms) for course in courses}  # M_i
         
@@ -94,14 +94,14 @@ class CourseCoveringProblem:
                     f"ClassLoad_{professor}_{term}"
                 )
         
-        # 3. Faculty teaching load constraint (total courses)
+        # 3. Faculty teaching load constraint (total courses) - individual limits
         for professor in self.professors:
             self.model += (
                 pulp.lpSum([
                     self.x_vars[(course, professor, term)]
                     for course in self.courses
                     for term in self.terms
-                ]) <= self.max_courses,
+                ]) <= self.professor_max_courses[professor],  # Use individual limit b_j
                 f"TotalCourses_{professor}"
             )
         
@@ -205,6 +205,8 @@ def main():
         st.session_state.term_preferences = {}
     if 'course_classes' not in st.session_state:
         st.session_state.course_classes = {}
+    if 'professor_max_courses' not in st.session_state:
+        st.session_state.professor_max_courses = {}
     
     # Navigation
     step = st.session_state.step
@@ -243,7 +245,7 @@ def show_setup_step():
         st.subheader("Terms")
         terms_input = st.text_area(
             "Enter terms (one per line):",
-            value="Fall\nSpring\nSummer",
+            value="T1\nT2\nT3",
             height=120
         )
     
@@ -273,21 +275,30 @@ def show_setup_step():
                 )
                 max_terms[course] = max_term
     
+    # Professor loading configuration
+    st.subheader("Professor Loading Configuration")
+    professors_preview = [prof.strip() for prof in professors_input.split('\n') if prof.strip()]
+    
+    if professors_preview:
+        st.write("Set maximum courses for each professor:")
+        professor_max_courses = {}
+        
+        cols = st.columns(min(4, len(professors_preview)))
+        for idx, professor in enumerate(professors_preview):
+            with cols[idx % len(cols)]:
+                max_courses_prof = st.number_input(
+                    f"Max courses for {professor}:",
+                    min_value=1, max_value=8, value=4,
+                    key=f"max_courses_{professor}"
+                )
+                professor_max_courses[professor] = max_courses_prof
+    
     # Parameters
     st.subheader("Global Parameters")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        max_courses = st.number_input(
-            "Maximum courses per professor (total):",
-            min_value=1, max_value=10, value=4
-        )
-    
-    with col2:
-        max_classes = st.number_input(
-            "Maximum classes per professor per term:",
-            min_value=1, max_value=6, value=3
-        )
+    max_classes = st.number_input(
+        "Maximum classes per professor per term:",
+        min_value=1, max_value=6, value=3
+    )
     
     # Process input and move to next step
     if st.button("Next: Set Preferences", type="primary"):
@@ -303,7 +314,7 @@ def show_setup_step():
             st.session_state.terms = terms
             st.session_state.course_classes = course_classes
             st.session_state.max_terms_course = max_terms
-            st.session_state.max_courses = max_courses
+            st.session_state.professor_max_courses = professor_max_courses
             st.session_state.max_classes = max_classes
             st.session_state.step = 2
             st.rerun()
@@ -407,7 +418,7 @@ def show_results_step():
     term_preferences = st.session_state.term_preferences
     course_classes = st.session_state.course_classes
     max_terms_course = st.session_state.max_terms_course
-    max_courses = st.session_state.max_courses
+    professor_max_courses = st.session_state.professor_max_courses
     max_classes = st.session_state.max_classes
     
     # Run optimization
@@ -419,7 +430,7 @@ def show_results_step():
             course_preferences=course_preferences,
             term_preferences=term_preferences,
             course_classes=course_classes,
-            max_courses_per_professor=max_courses,
+            professor_max_courses=professor_max_courses,  # Individual limits per professor
             max_classes_per_term=max_classes,
             max_terms_per_course=max_terms_course
         )
@@ -472,10 +483,19 @@ def show_results_step():
         # Professor workload analysis
         st.subheader("Professor Workload Analysis")
         
+        workload_summary_data = []
         workload_data = []
         for professor in professors:
             prof_data = solution['professor_loads'][professor]
             total_courses = prof_data['courses']
+            max_courses_allowed = professor_max_courses[professor]  # Individual limit
+            
+            workload_summary_data.append({
+                'Professor': professor,
+                'Total Courses': total_courses,
+                'Max Allowed': max_courses_allowed,
+                'Course Utilization %': (total_courses / max_courses_allowed) * 100
+            })
             
             for term in terms:
                 classes_in_term = prof_data['classes_per_term'][term]
@@ -483,8 +503,13 @@ def show_results_step():
                     'Professor': professor,
                     'Term': term,
                     'Classes': classes_in_term,
-                    'Utilization %': (classes_in_term / max_classes) * 100
+                    'Class Utilization %': (classes_in_term / max_classes) * 100
                 })
+        
+        # Show professor workload summary
+        workload_summary_df = pd.DataFrame(workload_summary_data)
+        st.write("**Professor Course Loads:**")
+        st.dataframe(workload_summary_df, use_container_width=True, hide_index=True)
         
         workload_df = pd.DataFrame(workload_data)
         
