@@ -108,11 +108,11 @@ class CourseCoveringProblem:
                 f"TotalCourses_{professor}"
             )
         
-        # 4. Course offering constraint: O_ik = sum of x_ijk (only for allowed terms)
+        # 4. Course offering constraint: sum of x_ijk <= O_ik (only for allowed terms)
         for course in self.courses:
             for term in self.course_allowed_terms[course]:  # Only allowed terms
                 self.model += (
-                    pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) == self.o_vars[(course, term)],
+                    pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) <= self.o_vars[(course, term)],
                     f"Offering_{course}_{term}"
                 )
     
@@ -273,7 +273,7 @@ def show_excel_upload_step():
             course_pref_sample = pd.DataFrame({
                 'Course': ['ACTL1', 'ACTL1', 'ACTL2'],
                 'Professor': ['Jonathan', 'JK', 'Jonathan'],
-                'Preference': [3, 1, 0]
+                'Preference': [2, 1, 0]  # Updated to use 0,1,2 scale
             })
             st.dataframe(course_pref_sample, hide_index=True)
             
@@ -281,7 +281,7 @@ def show_excel_upload_step():
             term_pref_sample = pd.DataFrame({
                 'Professor': ['Jonathan', 'Jonathan', 'JK'],
                 'Term': ['T1', 'T2', 'T1'],
-                'Preference': [3, 1, 1]
+                'Preference': [2, 1, 1]  # Updated to use 0,1,2 scale
             })
             st.dataframe(term_pref_sample, hide_index=True)
             
@@ -311,8 +311,8 @@ def show_excel_upload_step():
             Since Excel libraries are not available, you can create 5 separate CSV files:
             1. **courses.csv** - Course, Classes
             2. **professors.csv** - Professor, MaxClasses (max classes per term)
-            3. **course_preferences.csv** - Course, Professor, Preference
-            4. **term_preferences.csv** - Professor, Term, Preference (use T1, T2, T3)
+            3. **course_preferences.csv** - Course, Professor, Preference (0,1,2 scale)
+            4. **term_preferences.csv** - Professor, Term, Preference (use T1, T2, T3) (0,1,2 scale)
             5. **course_terms.csv** - Course, AllowedTerm (which terms each course can be offered)
             
             Then upload each file separately or combine them into one Excel file manually.
@@ -357,15 +357,23 @@ def show_excel_upload_step():
                 # Professor max classes per term (changed from MaxCourses to MaxClasses)
                 professor_max_classes = dict(zip(professors_df['Professor'], professors_df['MaxClasses']))
                 
-                # Course preferences
+                # Course preferences - validate scale
                 course_preferences = {}
                 for _, row in course_pref_df.iterrows():
-                    course_preferences[(row['Course'], row['Professor'])] = row['Preference']
+                    pref_value = row['Preference']
+                    if pref_value not in [0, 1, 2]:
+                        st.warning(f"Invalid preference value {pref_value} for course {row['Course']} - professor {row['Professor']}. Expected 0, 1, or 2.")
+                        pref_value = min(2, max(0, pref_value))  # Clamp to valid range
+                    course_preferences[(row['Course'], row['Professor'])] = pref_value
                 
-                # Term preferences
+                # Term preferences - validate scale
                 term_preferences = {}
                 for _, row in term_pref_df.iterrows():
-                    term_preferences[(row['Professor'], row['Term'])] = row['Preference']
+                    pref_value = row['Preference']
+                    if pref_value not in [0, 1, 2]:
+                        st.warning(f"Invalid preference value {pref_value} for professor {row['Professor']} - term {row['Term']}. Expected 0, 1, or 2.")
+                        pref_value = min(2, max(0, pref_value))  # Clamp to valid range
+                    term_preferences[(row['Professor'], row['Term'])] = pref_value
                 
                 # Course allowed terms
                 course_allowed_terms = {}
@@ -463,25 +471,25 @@ def create_excel_template():
     # Fixed terms - no need for separate sheet
     terms = ['T1', 'T2', 'T3']
     
-    # Course preferences (sample data)
+    # Course preferences (sample data) - using 0,1,2 scale
     course_pref_data = []
     for course in courses_data['Course']:
         for prof in professors_data['Professor']:
             course_pref_data.append({
                 'Course': course,
                 'Professor': prof,
-                'Preference': 1
+                'Preference': 1  # Default preference
             })
     course_pref_df = pd.DataFrame(course_pref_data)
     
-    # Term preferences (sample data)
+    # Term preferences (sample data) - using 0,1,2 scale
     term_pref_data = []
     for prof in professors_data['Professor']:
         for term in terms:  # Use the terms list instead of terms_data
             term_pref_data.append({
                 'Professor': prof,
                 'Term': term,
-                'Preference': 1
+                'Preference': 1  # Default preference
             })
     term_pref_df = pd.DataFrame(term_pref_data)
     
@@ -648,7 +656,7 @@ def show_preferences_step():
     # Course Preferences
     st.subheader("Course Preferences")
     st.markdown("Set how much each professor prefers to teach each course:")
-    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 3 = Strongly Prefer**")
+    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 2 = Strongly Prefer**")
     
     # Create course preference matrix
     course_pref_data = []
@@ -662,8 +670,8 @@ def show_preferences_step():
                 existing_pref = st.session_state.course_preferences.get((course, professor), 1)
                 pref = st.selectbox(
                     f"{course}",
-                    options=[0, 1, 3],
-                    index=[0, 1, 3].index(existing_pref) if existing_pref in [0, 1, 3] else 1,
+                    options=[0, 1, 2],  # Updated to use 0,1,2 scale
+                    index=[0, 1, 2].index(existing_pref) if existing_pref in [0, 1, 2] else 1,
                     key=f"course_pref_{course}_{professor}"
                 )
                 st.session_state.course_preferences[(course, professor)] = pref
@@ -686,8 +694,8 @@ def show_preferences_step():
                 existing_pref = st.session_state.term_preferences.get((professor, term), 1)
                 pref = st.selectbox(
                     f"{term}",
-                    options=[0, 1, 3],
-                    index=[0, 1, 3].index(existing_pref) if existing_pref in [0, 1, 3] else 1,
+                    options=[0, 1, 2],  # Updated to use 0,1,2 scale
+                    index=[0, 1, 2].index(existing_pref) if existing_pref in [0, 1, 2] else 1,
                     key=f"term_pref_{professor}_{term}"
                 )
                 st.session_state.term_preferences[(professor, term)] = pref
@@ -706,7 +714,7 @@ def show_preferences_step():
             x=course_pivot.columns,
             y=course_pivot.index,
             color_continuous_scale="RdYlGn",
-            range_color=[0, 3],
+            range_color=[0, 2],  # Updated range to 0-2
             title="Course Preference Matrix"
         )
         st.plotly_chart(fig1, width='stretch')
@@ -766,6 +774,21 @@ def show_results_step():
     
     if solution['status'] == 'Optimal':
         
+        # Check for "ghost courses" - courses marked as offered but not assigned
+        ghost_courses = []
+        for course in courses:
+            for term in course_allowed_terms[course]:
+                if problem.o_vars[(course, term)].varValue == 1:  # Course is marked as offered
+                    if (course, term) not in solution['assignments']:  # But no professor assigned
+                        ghost_courses.append((course, term))
+        
+        if ghost_courses:
+            st.warning("⚠️ Ghost Courses Detected")
+            st.markdown("The following courses are marked as 'offered' but have no professor assigned due to the ≤ constraint:")
+            for course, term in ghost_courses:
+                st.write(f"  • {course} in {term}")
+            st.markdown("This occurs because the constraint allows O_ik = 1 even when no professor is assigned.")
+        
         # Course assignments by term
         st.subheader("Course Assignments by Term")
         
@@ -811,7 +834,7 @@ def show_results_step():
                 'Professor': professor,
                 'Total Courses': total_courses,
                 'Max Allowed': max_courses_allowed,
-                'Course Utilization %': (total_courses / max_courses_allowed) * 100
+                'Course Utilization %': (total_courses / max_courses_allowed) * 100 if max_courses_allowed > 0 else 0
             })
             
             for term in terms:
@@ -820,7 +843,7 @@ def show_results_step():
                     'Professor': professor,
                     'Term': term,
                     'Classes': classes_in_term,
-                    'Class Utilization %': (classes_in_term / max_classes) * 100
+                    'Class Utilization %': (classes_in_term / max_classes) * 100 if max_classes > 0 else 0
                 })
         
         # Show professor workload summary
