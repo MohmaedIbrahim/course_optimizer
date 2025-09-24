@@ -719,6 +719,32 @@ def show_preferences_step():
         )
         st.plotly_chart(fig1, width='stretch')
     
+    # Term preference heatmap
+    term_pref_data = []
+    for professor in professors:
+        for term in terms:
+            pref_value = st.session_state.term_preferences.get((professor, term), 1)
+            term_pref_data.append({
+                'Professor': professor,
+                'Term': term,
+                'Preference': pref_value
+            })
+    
+    if term_pref_data:
+        term_pref_df = pd.DataFrame(term_pref_data)
+        term_pivot = term_pref_df.pivot(index='Professor', columns='Term', values='Preference')
+        
+        fig2 = px.imshow(
+            term_pivot.values,
+            labels=dict(x="Term", y="Professor", color="Term Preference"),
+            x=term_pivot.columns,
+            y=term_pivot.index,
+            color_continuous_scale="RdYlGn",
+            range_color=[0, 2],  # Updated range to 0-2
+            title="Term Preference Matrix"
+        )
+        st.plotly_chart(fig2, width='stretch')
+    
     # Navigation buttons
     col1, col2 = st.columns(2)
     with col1:
