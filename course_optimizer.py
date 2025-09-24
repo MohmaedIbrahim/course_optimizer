@@ -242,12 +242,11 @@ def show_excel_upload_step():
     st.subheader("Required Excel File Format")
     st.markdown("""
     Your Excel file should contain the following sheets:
-    1. **Courses** - Course configuration
-    2. **Professors** - Professor configuration  
-    3. **Terms** - Term list
-    4. **CoursePreferences** - Course preference matrix
-    5. **TermPreferences** - Term preference matrix
-    6. **CourseTerms** - Which terms each course can be offered
+    1. **Courses** - Course configuration (Course name and number of classes)
+    2. **Professors** - Professor configuration (Professor name and max classes per term)
+    3. **CoursePreferences** - Course preference matrix
+    4. **TermPreferences** - Term preference matrix (uses T1, T2, T3)
+    5. **CourseTerms** - Which terms each course can be offered
     """)
     
     # Show sample format
@@ -265,15 +264,9 @@ def show_excel_upload_step():
             st.write("**Professors Sheet:**")
             profs_sample = pd.DataFrame({
                 'Professor': ['Jonathan', 'JK', 'Patrick'],
-                'MaxCourses': [4, 3, 5]
+                'MaxClasses': [3, 3, 3]  # Max classes per term
             })
             st.dataframe(profs_sample, hide_index=True)
-            
-            st.write("**Terms Sheet:**")
-            terms_sample = pd.DataFrame({
-                'Term': ['T1', 'T2', 'T3']
-            })
-            st.dataframe(terms_sample, hide_index=True)
         
         with col2:
             st.write("**CoursePreferences Sheet:**")
@@ -315,13 +308,12 @@ def show_excel_upload_step():
             # Provide CSV alternative
             st.subheader("Alternative: Create CSV Files")
             st.markdown("""
-            Since Excel libraries are not available, you can create 6 separate CSV files:
+            Since Excel libraries are not available, you can create 5 separate CSV files:
             1. **courses.csv** - Course, Classes
-            2. **professors.csv** - Professor, MaxCourses  
-            3. **terms.csv** - Term
-            4. **course_preferences.csv** - Course, Professor, Preference
-            5. **term_preferences.csv** - Professor, Term, Preference
-            6. **course_terms.csv** - Course, AllowedTerm
+            2. **professors.csv** - Professor, MaxClasses (max classes per term)
+            3. **course_preferences.csv** - Course, Professor, Preference
+            4. **term_preferences.csv** - Professor, Term, Preference (use T1, T2, T3)
+            5. **course_terms.csv** - Course, AllowedTerm (which terms each course can be offered)
             
             Then upload each file separately or combine them into one Excel file manually.
             """)
@@ -339,8 +331,8 @@ def show_excel_upload_step():
             with st.spinner("Reading Excel file..."):
                 excel_data = pd.ExcelFile(uploaded_file)
                 
-                # Validate required sheets
-                required_sheets = ['Courses', 'Professors', 'Terms', 'CoursePreferences', 'TermPreferences', 'CourseTerms']
+                # Validate required sheets (removed Terms sheet)
+                required_sheets = ['Courses', 'Professors', 'CoursePreferences', 'TermPreferences', 'CourseTerms']
                 missing_sheets = [sheet for sheet in required_sheets if sheet not in excel_data.sheet_names]
                 
                 if missing_sheets:
@@ -350,7 +342,6 @@ def show_excel_upload_step():
                 # Read all sheets
                 courses_df = pd.read_excel(uploaded_file, sheet_name='Courses')
                 professors_df = pd.read_excel(uploaded_file, sheet_name='Professors')
-                terms_df = pd.read_excel(uploaded_file, sheet_name='Terms')
                 course_pref_df = pd.read_excel(uploaded_file, sheet_name='CoursePreferences')
                 term_pref_df = pd.read_excel(uploaded_file, sheet_name='TermPreferences')
                 course_terms_df = pd.read_excel(uploaded_file, sheet_name='CourseTerms')
@@ -358,13 +349,13 @@ def show_excel_upload_step():
                 # Process data
                 courses = courses_df['Course'].tolist()
                 professors = professors_df['Professor'].tolist()
-                terms = terms_df['Term'].tolist()
+                terms = ['T1', 'T2', 'T3']  # Fixed terms, no need for sheet
                 
                 # Course classes
                 course_classes = dict(zip(courses_df['Course'], courses_df['Classes']))
                 
-                # Professor max courses
-                professor_max_courses = dict(zip(professors_df['Professor'], professors_df['MaxCourses']))
+                # Professor max classes per term (changed from MaxCourses to MaxClasses)
+                professor_max_classes = dict(zip(professors_df['Professor'], professors_df['MaxClasses']))
                 
                 # Course preferences
                 course_preferences = {}
@@ -388,11 +379,10 @@ def show_excel_upload_step():
                 st.session_state.professors = professors
                 st.session_state.terms = terms
                 st.session_state.course_classes = course_classes
-                st.session_state.professor_max_courses = professor_max_courses
+                st.session_state.professor_max_classes = professor_max_classes  # Changed variable name
                 st.session_state.course_preferences = course_preferences
                 st.session_state.term_preferences = term_preferences
                 st.session_state.course_allowed_terms = course_allowed_terms
-                st.session_state.max_classes = 3  # Default value
                 
                 st.success("Excel file loaded successfully!")
                 
@@ -467,12 +457,11 @@ def create_excel_template():
     
     professors_data = pd.DataFrame({
         'Professor': ['Jonathan', 'JK', 'Patrick', 'Andres'],
-        'MaxCourses': [4, 3, 5, 4]
+        'MaxClasses': [3, 3, 3, 3]  # Max classes per term, not total courses
     })
     
-    terms_data = pd.DataFrame({
-        'Term': ['T1', 'T2', 'T3']
-    })
+    # Fixed terms - no need for separate sheet
+    terms = ['T1', 'T2', 'T3']
     
     # Course preferences (sample data)
     course_pref_data = []
@@ -488,7 +477,7 @@ def create_excel_template():
     # Term preferences (sample data)
     term_pref_data = []
     for prof in professors_data['Professor']:
-        for term in terms_data['Term']:
+        for term in terms:  # Use the terms list instead of terms_data
             term_pref_data.append({
                 'Professor': prof,
                 'Term': term,
@@ -511,7 +500,7 @@ def create_excel_template():
         with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
             courses_data.to_excel(writer, sheet_name='Courses', index=False)
             professors_data.to_excel(writer, sheet_name='Professors', index=False)
-            terms_data.to_excel(writer, sheet_name='Terms', index=False)
+            # No Terms sheet needed - T1, T2, T3 are fixed
             course_pref_df.to_excel(writer, sheet_name='CoursePreferences', index=False)
             term_pref_df.to_excel(writer, sheet_name='TermPreferences', index=False)
             course_terms_df.to_excel(writer, sheet_name='CourseTerms', index=False)
