@@ -302,12 +302,29 @@ def show_excel_upload_step():
     # Download template button
     if st.button("Download Excel Template"):
         template_data = create_excel_template()
-        st.download_button(
-            label="Download Template File",
-            data=template_data,
-            file_name="course_covering_template.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        if template_data:
+            st.download_button(
+                label="Download Template File",
+                data=template_data,
+                file_name="course_covering_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.error("Excel template generation failed. Please create the file manually or use CSV format.")
+            
+            # Provide CSV alternative
+            st.subheader("Alternative: Create CSV Files")
+            st.markdown("""
+            Since Excel libraries are not available, you can create 6 separate CSV files:
+            1. **courses.csv** - Course, Classes
+            2. **professors.csv** - Professor, MaxCourses  
+            3. **terms.csv** - Term
+            4. **course_preferences.csv** - Course, Professor, Preference
+            5. **term_preferences.csv** - Professor, Term, Preference
+            6. **course_terms.csv** - Course, AllowedTerm
+            
+            Then upload each file separately or combine them into one Excel file manually.
+            """)
     
     # File upload
     uploaded_file = st.file_uploader(
@@ -436,8 +453,11 @@ def show_excel_upload_step():
 
 
 def create_excel_template():
-    """Create an Excel template file with sample data using pandas."""
+    """Create an Excel template file with sample data using only pandas (no additional dependencies)."""
     import io
+    
+    # Create sample data for all sheets
+    sheets_content = {}
     
     # Sample data
     courses_data = pd.DataFrame({
@@ -485,19 +505,22 @@ def create_excel_template():
         })
     course_terms_df = pd.DataFrame(course_terms_data)
     
-    # Create Excel file using pandas
-    excel_buffer = io.BytesIO()
-    
-    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-        courses_data.to_excel(writer, sheet_name='Courses', index=False)
-        professors_data.to_excel(writer, sheet_name='Professors', index=False)
-        terms_data.to_excel(writer, sheet_name='Terms', index=False)
-        course_pref_df.to_excel(writer, sheet_name='CoursePreferences', index=False)
-        term_pref_df.to_excel(writer, sheet_name='TermPreferences', index=False)
-        course_terms_df.to_excel(writer, sheet_name='CourseTerms', index=False)
-    
-    excel_buffer.seek(0)
-    return excel_buffer.getvalue()
+    # Try to create Excel file, fall back to CSV if Excel libraries not available
+    try:
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+            courses_data.to_excel(writer, sheet_name='Courses', index=False)
+            professors_data.to_excel(writer, sheet_name='Professors', index=False)
+            terms_data.to_excel(writer, sheet_name='Terms', index=False)
+            course_pref_df.to_excel(writer, sheet_name='CoursePreferences', index=False)
+            term_pref_df.to_excel(writer, sheet_name='TermPreferences', index=False)
+            course_terms_df.to_excel(writer, sheet_name='CourseTerms', index=False)
+        excel_buffer.seek(0)
+        return excel_buffer.getvalue()
+    except ImportError:
+        # Fall back to CSV format if Excel libraries not available
+        st.warning("Excel libraries not available. Download CSV files instead.")
+        return None
 
 
 def show_setup_step():
@@ -576,7 +599,7 @@ def show_setup_step():
                 matrix_data.append(row_data)
             
             matrix_df = pd.DataFrame(matrix_data)
-            st.dataframe(matrix_df, use_container_width=True, hide_index=True)
+            st.dataframe(matrix_df, width='stretch', hide_index=True)
     
     # Professor loading configuration
     st.subheader("Professor Loading Configuration")
@@ -697,7 +720,7 @@ def show_preferences_step():
             range_color=[0, 3],
             title="Course Preference Matrix"
         )
-        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig1, width='stretch')
     
     # Navigation buttons
     col1, col2 = st.columns(2)
@@ -783,7 +806,7 @@ def show_results_step():
         # Assignments dataframe
         if assignments_data:
             assignments_df = pd.DataFrame(assignments_data)
-            st.dataframe(assignments_df, use_container_width=True, hide_index=True)
+            st.dataframe(assignments_df, width='stretch', hide_index=True)
         
         # Professor workload analysis
         st.subheader("Professor Workload Analysis")
@@ -814,7 +837,7 @@ def show_results_step():
         # Show professor workload summary
         workload_summary_df = pd.DataFrame(workload_summary_data)
         st.write("**Professor Course Loads:**")
-        st.dataframe(workload_summary_df, use_container_width=True, hide_index=True)
+        st.dataframe(workload_summary_df, width='stretch', hide_index=True)
         
         workload_df = pd.DataFrame(workload_data)
         
@@ -828,7 +851,7 @@ def show_results_step():
             color_continuous_scale="Blues",
             title="Professor Workload by Term (Classes)"
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
         
         # Course offerings summary
         st.subheader("Course Offerings Summary")
@@ -844,7 +867,7 @@ def show_results_step():
                 })
             
             offerings_df = pd.DataFrame(offering_data)
-            st.dataframe(offerings_df, use_container_width=True, hide_index=True)
+            st.dataframe(offerings_df, width='stretch', hide_index=True)
         
         # Uncovered courses
         if solution.get('uncovered_courses'):
