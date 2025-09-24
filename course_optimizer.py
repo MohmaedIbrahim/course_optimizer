@@ -717,7 +717,7 @@ def show_preferences_step():
             range_color=[0, 2],  # Updated range to 0-2
             title="Course Preference Matrix"
         )
-        st.plotly_chart(fig1, width='stretch')
+        st.plotly_chart(fig1, use_container_width=True)
     
     # Term preference heatmap
     term_pref_data = []
@@ -889,7 +889,7 @@ def show_results_step():
             color_continuous_scale="Blues",
             title="Professor Workload by Term (Classes)"
         )
-        st.plotly_chart(fig2, width='stretch')
+        st.plotly_chart(fig2, use_container_width=True)
         
         # Course offerings summary
         st.subheader("Course Offerings Summary")
