@@ -431,14 +431,64 @@ def show_excel_upload_step():
                     for course in courses:
                         for prof in professors:
                             course_pref_matrix.loc[course, prof] = course_preferences.get((course, prof), 0)
+                    
+                    # Show table
                     st.dataframe(course_pref_matrix)
+                    
+                    # Show heatmap with debugging
+                    try:
+                        # Debug info
+                        st.write(f"Matrix shape: {course_pref_matrix.shape}")
+                        st.write(f"Matrix values type: {type(course_pref_matrix.values)}")
+                        
+                        # Convert to numeric and handle any errors
+                        numeric_matrix = pd.to_numeric(course_pref_matrix.values.flatten(), errors='coerce').reshape(course_pref_matrix.shape)
+                        
+                        fig_course = px.imshow(
+                            numeric_matrix,
+                            labels=dict(x="Professor", y="Course", color="Course Preference"),
+                            x=course_pref_matrix.columns.tolist(),
+                            y=course_pref_matrix.index.tolist(),
+                            color_continuous_scale="RdYlGn",
+                            range_color=[0, 2],
+                            title="Course Preference Heatmap"
+                        )
+                        st.plotly_chart(fig_course, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Error creating course preference heatmap: {str(e)}")
+                        st.write("Matrix data:", course_pref_matrix)
                     
                     st.write("**Term Preferences Matrix:**")
                     term_pref_matrix = pd.DataFrame(index=professors, columns=terms)
                     for prof in professors:
                         for term in terms:
                             term_pref_matrix.loc[prof, term] = term_preferences.get((prof, term), 0)
+                    
+                    # Show table
                     st.dataframe(term_pref_matrix)
+                    
+                    # Show heatmap with debugging
+                    try:
+                        # Debug info
+                        st.write(f"Term matrix shape: {term_pref_matrix.shape}")
+                        st.write(f"Term matrix values type: {type(term_pref_matrix.values)}")
+                        
+                        # Convert to numeric and handle any errors
+                        numeric_term_matrix = pd.to_numeric(term_pref_matrix.values.flatten(), errors='coerce').reshape(term_pref_matrix.shape)
+                        
+                        fig_term = px.imshow(
+                            numeric_term_matrix,
+                            labels=dict(x="Term", y="Professor", color="Term Preference"),
+                            x=term_pref_matrix.columns.tolist(),
+                            y=term_pref_matrix.index.tolist(),
+                            color_continuous_scale="RdYlGn",
+                            range_color=[0, 2],
+                            title="Term Preference Heatmap"
+                        )
+                        st.plotly_chart(fig_term, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Error creating term preference heatmap: {str(e)}")
+                        st.write("Term matrix data:", term_pref_matrix)
                 
                 # Run optimization button
                 if st.button("Run Optimization", type="primary"):
