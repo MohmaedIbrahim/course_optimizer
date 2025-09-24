@@ -391,6 +391,7 @@ def show_excel_upload_step():
                 st.session_state.course_preferences = course_preferences
                 st.session_state.term_preferences = term_preferences
                 st.session_state.course_allowed_terms = course_allowed_terms
+                st.session_state.max_classes = 3  # Default value for Excel upload
                 
                 st.success("Excel file loaded successfully!")
                 
@@ -904,13 +905,13 @@ def show_results_step():
         for professor in professors:
             prof_data = solution['professor_loads'][professor]
             total_courses = prof_data['courses']
-            max_courses_allowed = professor_max_courses[professor]  # Individual limit
+            max_allowed_courses = professor_max_courses[professor]  # Individual limit
             
             workload_summary_data.append({
                 'Professor': professor,
                 'Total Courses': total_courses,
-                'Max Allowed': max_classes_allowed,
-                'Course Utilization %': (total_courses / max_classes_allowed) * 100 if max_classes_allowed > 0 else 0
+                'Max Allowed': max_allowed_courses,
+                'Course Utilization %': (total_courses / max_allowed_courses) * 100 if max_allowed_courses > 0 else 0
             })
             
             for term in terms:
