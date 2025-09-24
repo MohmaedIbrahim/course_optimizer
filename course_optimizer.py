@@ -421,7 +421,7 @@ def show_excel_upload_step():
                     st.write("**Professor Configuration:**")
                     prof_summary = pd.DataFrame({
                         'Professor': professors,
-                        'Max Courses': [professor_max_courses[p] for p in professors]
+                        'Max Classes': [professor_max_classes[p] for p in professors]
                     })
                     st.dataframe(prof_summary, hide_index=True)
                 
@@ -603,18 +603,18 @@ def show_setup_step():
     professors_preview = [prof.strip() for prof in professors_input.split('\n') if prof.strip()]
     
     if professors_preview:
-        st.write("Set maximum courses for each professor:")
-        professor_max_courses = {}
+        st.write("Set maximum classes per term for each professor:")
+        professor_max_classes = {}
         
         cols = st.columns(min(4, len(professors_preview)))
         for idx, professor in enumerate(professors_preview):
             with cols[idx % len(cols)]:
-                max_courses_prof = st.number_input(
-                    f"Max courses for {professor}:",
-                    min_value=1, max_value=8, value=4,
-                    key=f"max_courses_{professor}"
+                max_classes_prof = st.number_input(
+                    f"Max classes for {professor}:",
+                    min_value=1, max_value=8, value=3,
+                    key=f"max_classes_{professor}"
                 )
-                professor_max_courses[professor] = max_courses_prof
+                professor_max_classes[professor] = max_classes_prof
     
     # Parameters
     st.subheader("Global Parameters")
@@ -639,7 +639,7 @@ def show_setup_step():
             st.session_state.terms = terms
             st.session_state.course_classes = course_classes
             st.session_state.course_allowed_terms = course_allowed_terms
-            st.session_state.professor_max_courses = professor_max_courses
+            st.session_state.professor_max_courses = professor_max_classes  # This represents total courses limit (b_j)
             st.session_state.max_classes = max_classes
             st.session_state.step = 2
             st.rerun()
@@ -755,7 +755,7 @@ def show_results_step():
             course_preferences=course_preferences,
             term_preferences=term_preferences,
             course_classes=course_classes,
-            professor_max_courses=professor_max_courses,  # Individual limits per professor
+            professor_max_courses=professor_max_courses,  # Individual limits per professor (total courses)
             course_allowed_terms=course_allowed_terms,  # Specific allowed terms per course
             max_classes_per_term=max_classes
         )
@@ -833,8 +833,8 @@ def show_results_step():
             workload_summary_data.append({
                 'Professor': professor,
                 'Total Courses': total_courses,
-                'Max Allowed': max_courses_allowed,
-                'Course Utilization %': (total_courses / max_courses_allowed) * 100 if max_courses_allowed > 0 else 0
+                'Max Allowed': max_classes_allowed,
+                'Course Utilization %': (total_courses / max_classes_allowed) * 100 if max_classes_allowed > 0 else 0
             })
             
             for term in terms:
