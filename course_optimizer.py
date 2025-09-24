@@ -881,7 +881,7 @@ def show_results_step():
         
         # Workload heatmap
         workload_pivot = workload_df.pivot(index='Professor', columns='Term', values='Classes')
-        fig2 = px.imshow(
+        fig3 = px.imshow(
             workload_pivot.values,
             labels=dict(x="Term", y="Professor", color="Classes"),
             x=workload_pivot.columns,
@@ -889,7 +889,7 @@ def show_results_step():
             color_continuous_scale="Blues",
             title="Professor Workload by Term (Classes)"
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig3, use_container_width=True)
         
         # Course offerings summary
         st.subheader("Course Offerings Summary")
