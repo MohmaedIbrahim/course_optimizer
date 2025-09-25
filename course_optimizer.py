@@ -1569,7 +1569,7 @@ def show_data_analysis_step():
         pref_range = f"{course_pref_matrix.min().min():.0f} - {course_pref_matrix.max().max():.0f}"
         st.metric("Preference Range", pref_range)
     
-    # Analysis: Courses with multiple professors scoring 10, and courses without score 10
+    # Analysis: Courses with multiple professors scoring 10 or 8
     st.subheader("Course Preference Analysis")
     
     # Find courses with multiple professors giving score 10
@@ -1595,30 +1595,28 @@ def show_data_analysis_step():
     else:
         st.info("No courses have multiple professors with score 10")
     
-    # Find courses without any score of 10
-    courses_without_10 = []
+    # Find courses with multiple professors giving score 8
+    courses_with_multiple_8s = []
     for course in courses:
-        max_score = course_pref_matrix.loc[course].max()
-        if max_score < 10:
-            # Get all professors and their scores for this course
-            course_scores = []
-            for prof in professors:
-                score = course_pref_matrix.loc[course, prof]
-                if score > 0:  # Only show non-zero scores
-                    course_scores.append(f"{prof}: {score}")
-            
-            courses_without_10.append({
+        profs_with_8 = []
+        for prof in professors:
+            score = course_pref_matrix.loc[course, prof]
+            if score == 8:
+                profs_with_8.append(prof)
+        
+        if len(profs_with_8) > 1:  # Only courses with multiple 8s
+            courses_with_multiple_8s.append({
                 'Course': course,
-                'Max Score': max_score,
-                'All Scores': '; '.join(course_scores) if course_scores else 'No positive scores'
+                'Professors with Score 8': ', '.join(profs_with_8),
+                'Count': len(profs_with_8)
             })
     
-    if courses_without_10:
-        st.write("**Courses Without Any Score of 10:**")
-        no_ten_df = pd.DataFrame(courses_without_10)
-        st.dataframe(no_ten_df, hide_index=True)
+    if courses_with_multiple_8s:
+        st.write("**Courses with Multiple Professors Scoring 8:**")
+        multiple_8s_df = pd.DataFrame(courses_with_multiple_8s)
+        st.dataframe(multiple_8s_df, hide_index=True)
     else:
-        st.success("All courses have at least one professor with a score of 10")
+        st.info("No courses have multiple professors with score 8")
     
     # Term Preferences Heatmap (t_jk)
     st.subheader("Term Preferences Heatmap (t_jk)")
