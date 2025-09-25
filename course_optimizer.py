@@ -996,22 +996,96 @@ def show_results_step():
         st.metric("Unassigned Offerings", unassigned_count)
     
     if solution['status'] == 'Optimal':
-        # Course assignments
-        st.subheader("Course Assignments")
+        # MATRIX FORMAT - REPLACE OLD TABLE
+        st.success("Optimization completed successfully!")
         
-        if solution['assignments']:
-            assignments_data = []
-            for (course, term), professor in solution['assignments'].items():
-                streams = course_streams.get((course, term), 1)
-                assignments_data.append({
-                    'Course': course,
-                    'Term': term, 
-                    'Professor': professor,
-                    'Streams': streams
-                })
+        # Extract assignments data
+        assignments = solution.get('assignments', {})
+        
+        # 1. PRIMARY MATRIX: ALL TERMS COMBINED
+        st.subheader("Course Assignment Matrix - All Terms")
+        st.markdown("**Rows = Courses, Columns = Staff Members, Values = 1 (Assigned) or 0 (Not Assigned)**")
+        
+        # Build the matrix data structure
+        matrix_data = []
+        for course in courses:
+            row_data = {'Course': course}  # Row label
+            # Initialize all staff to 0
+            for professor in professors:
+                row_data[professor] = 0
             
-            assignments_df = pd.DataFrame(assignments_data)
-            st.dataframe(assignments_df, hide_index=True)
+            # Set to 1 where assignments exist (any term)
+            for (assigned_course, term), assigned_professor in assignments.items():
+                if assigned_course == course:
+                    row_data[assigned_professor] = 1
+            
+            matrix_data.append(row_data)
+        
+        # Create DataFrame and display
+        main_matrix_df = pd.DataFrame(matrix_data)
+        main_matrix_df.set_index('Course', inplace=True)  # Course names as row index
+        
+        # Display the matrix
+        st.dataframe(
+            main_matrix_df,
+            height=min(600, len(courses) * 25),
+            use_container_width=True
+        )
+        
+        # Matrix summary
+        total_assignments = main_matrix_df.sum().sum()
+        courses_with_staff = (main_matrix_df.sum(axis=1) > 0).sum()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Assignments", int(total_assignments))
+        with col2:
+            st.metric("Courses Covered", f"{courses_with_staff}/{len(courses)}")
+        
+        # 2. INDIVIDUAL TERM MATRICES
+        st.subheader("Term-Specific Assignment Matrices")
+        
+        # Create term tabs
+        term_tabs = st.tabs([f"Term {term}" for term in terms])
+        
+        for tab_idx, term in enumerate(terms):
+            with term_tabs[tab_idx]:
+                st.markdown(f"**{term} Matrix: Rows = Courses, Columns = Staff**")
+                
+                # Build term-specific matrix
+                term_matrix_data = []
+                for course in courses:
+                    term_row = {'Course': course}
+                    # Initialize all staff to 0 for this term
+                    for professor in professors:
+                        term_row[professor] = 0
+                    
+                    # Set to 1 only for assignments in this specific term
+                    for (assigned_course, assigned_term), assigned_professor in assignments.items():
+                        if assigned_course == course and assigned_term == term:
+                            term_row[assigned_professor] = 1
+                    
+                    term_matrix_data.append(term_row)
+                
+                # Create and display term matrix
+                term_matrix_df = pd.DataFrame(term_matrix_data)
+                term_matrix_df.set_index('Course', inplace=True)
+                
+                st.dataframe(
+                    term_matrix_df,
+                    height=min(500, len(courses) * 22),
+                    use_container_width=True
+                )
+                
+                # Term statistics
+                term_total = term_matrix_df.sum().sum()
+                term_courses = (term_matrix_df.sum(axis=1) > 0).sum()
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric(f"{term} Assignments", int(term_total))
+                with col2:
+                    st.metric(f"{term} Courses", int(term_courses))
         
         # Professor workload analysis
         st.subheader("Professor Workload Analysis")
