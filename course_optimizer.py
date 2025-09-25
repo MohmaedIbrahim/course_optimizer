@@ -1540,13 +1540,19 @@ def show_data_analysis_step():
         text_auto=True  # Show values in cells
     )
     
-    # Make it large for 60 courses and 24 staff
+    # Make it large for 60 courses and 24 staff with proper Y-axis display
     fig1.update_layout(
-        height=max(800, len(courses) * 15),  # Dynamic height based on course count
+        height=max(800, len(courses) * 20),  # Increased spacing for course names
         width=max(1200, len(professors) * 40),  # Dynamic width based on professor count
         font=dict(size=10),
         xaxis=dict(tickangle=45, title="Staff Members"),
-        yaxis=dict(title="Courses")
+        yaxis=dict(
+            title="Courses",
+            tickmode='array',
+            tickvals=list(range(len(courses))),
+            ticktext=courses,
+            tickfont=dict(size=9)  # Smaller font for course names to fit better
+        )
     )
     
     st.plotly_chart(fig1, use_container_width=True)
@@ -1563,36 +1569,31 @@ def show_data_analysis_step():
         pref_range = f"{course_pref_matrix.min().min():.0f} - {course_pref_matrix.max().max():.0f}"
         st.metric("Preference Range", pref_range)
     
-    # Analysis: Duplicate scores and courses without score 10
+    # Analysis: Courses with multiple professors scoring 10, and courses without score 10
     st.subheader("Course Preference Analysis")
     
-    # Find courses with duplicate scores (same score by multiple professors)
-    duplicate_scores = []
+    # Find courses with multiple professors giving score 10
+    courses_with_multiple_10s = []
     for course in courses:
-        course_scores = {}
+        profs_with_10 = []
         for prof in professors:
             score = course_pref_matrix.loc[course, prof]
-            if score > 0:  # Only consider non-zero scores
-                if score not in course_scores:
-                    course_scores[score] = []
-                course_scores[score].append(prof)
+            if score == 10:
+                profs_with_10.append(prof)
         
-        # Check for scores with multiple professors
-        for score, profs in course_scores.items():
-            if len(profs) > 1:
-                duplicate_scores.append({
-                    'Course': course,
-                    'Score': score,
-                    'Professors': ', '.join(profs),
-                    'Count': len(profs)
-                })
+        if len(profs_with_10) > 1:  # Only courses with multiple 10s
+            courses_with_multiple_10s.append({
+                'Course': course,
+                'Professors with Score 10': ', '.join(profs_with_10),
+                'Count': len(profs_with_10)
+            })
     
-    if duplicate_scores:
-        st.write("**Courses with Same Scores by Multiple Professors:**")
-        duplicate_df = pd.DataFrame(duplicate_scores)
-        st.dataframe(duplicate_df, hide_index=True)
+    if courses_with_multiple_10s:
+        st.write("**Courses with Multiple Professors Scoring 10:**")
+        multiple_10s_df = pd.DataFrame(courses_with_multiple_10s)
+        st.dataframe(multiple_10s_df, hide_index=True)
     else:
-        st.info("No courses have the same non-zero score from multiple professors")
+        st.info("No courses have multiple professors with score 10")
     
     # Find courses without any score of 10
     courses_without_10 = []
