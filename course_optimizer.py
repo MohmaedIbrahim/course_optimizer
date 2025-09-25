@@ -1363,7 +1363,7 @@ def show_data_analysis_step():
     course_streams = st.session_state.course_streams
     
     # Overview Statistics
-    st.subheader("📊 Data Overview")
+    st.subheader("Data Overview")
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -1377,8 +1377,9 @@ def show_data_analysis_step():
         total_streams = sum(course_streams.values())
         st.metric("Total Streams", total_streams)
     
-    # Course Preferences Analysis
-    st.subheader("🎯 Course Preferences Analysis (c_ij)")
+    # Course Preferences Heatmap (c_ij)
+    st.subheader("Course Preferences Heatmap (c_ij)")
+    st.markdown("**Scale: 0 = Cannot teach, 10 = Strongly prefer**")
     
     # Create preference matrix for visualization
     pref_matrix_data = []
@@ -1394,7 +1395,7 @@ def show_data_analysis_step():
     pref_df = pd.DataFrame(pref_matrix_data)
     pref_pivot = pref_df.pivot(index='Course', columns='Professor', values='Preference')
     
-    # Course preferences heatmap
+    # Large course preferences heatmap
     fig1 = px.imshow(
         pref_pivot.values,
         labels=dict(x="Professor", y="Course", color="Preference Score"),
@@ -1402,42 +1403,37 @@ def show_data_analysis_step():
         y=pref_pivot.index,
         color_continuous_scale="RdYlGn",
         range_color=[0, 10],
-        title="Course Preferences Heatmap (c_ij)",
+        title="Course Preferences Matrix - All Courses vs All Staff",
         aspect="auto"
     )
-    fig1.update_layout(height=400)
+    
+    # Make it large for 60 courses and 24 staff
+    fig1.update_layout(
+        height=max(800, len(courses) * 15),  # Dynamic height based on course count
+        width=max(1200, len(professors) * 40),  # Dynamic width based on professor count
+        font=dict(size=10),
+        xaxis=dict(tickangle=45),
+        yaxis=dict(tickmode='array', tickvals=list(range(len(courses))), ticktext=courses)
+    )
+    
     st.plotly_chart(fig1, use_container_width=True)
     
-    # Preference statistics
-    col1, col2 = st.columns(2)
-    
+    # Course preference statistics summary
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.write("**Course Preference Statistics:**")
-        pref_stats = pref_df['Preference'].describe()
-        stats_df = pd.DataFrame({
-            'Statistic': ['Mean', 'Std', 'Min', '25%', '50%', '75%', 'Max'],
-            'Value': [f"{pref_stats[stat]:.2f}" for stat in ['mean', 'std', 'min', '25%', '50%', '75%', 'max']]
-        })
-        st.dataframe(stats_df, hide_index=True)
-        
-        # Zero preferences warning
-        zero_prefs = len(pref_df[pref_df['Preference'] == 0])
-        if zero_prefs > 0:
-            st.warning(f"⚠️ {zero_prefs} zero preferences found - may cause assignment difficulties")
-    
+        st.metric("Average Preference", f"{pref_df['Preference'].mean():.2f}")
     with col2:
-        # Preference distribution
-        fig2 = px.histogram(
-            pref_df, x='Preference',
-            nbins=11, range_x=[-0.5, 10.5],
-            title="Course Preference Distribution",
-            labels={'count': 'Frequency'}
-        )
-        fig2.update_layout(height=300)
-        st.plotly_chart(fig2, use_container_width=True)
+        zero_prefs = len(pref_df[pref_df['Preference'] == 0])
+        st.metric("Zero Preferences", zero_prefs)
+        if zero_prefs > 0:
+            st.warning(f"⚠️ {zero_prefs} zero preferences may cause assignment difficulties")
+    with col3:
+        high_prefs = len(pref_df[pref_df['Preference'] >= 8])
+        st.metric("High Preferences (≥8)", high_prefs)
     
-    # Term Preferences Analysis
-    st.subheader("📅 Term Preferences Analysis (t_jk)")
+    # Term Preferences Heatmap (t_jk)
+    st.subheader("Term Preferences Heatmap (t_jk)")
+    st.markdown("**Scale: 0 = Cannot teach, 10 = Strongly prefer**")
     
     # Create term preference matrix
     term_pref_data = []
@@ -1453,176 +1449,91 @@ def show_data_analysis_step():
     term_pref_df = pd.DataFrame(term_pref_data)
     term_pref_pivot = term_pref_df.pivot(index='Professor', columns='Term', values='Preference')
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Term preferences heatmap
-        fig3 = px.imshow(
-            term_pref_pivot.values,
-            labels=dict(x="Term", y="Professor", color="Preference Score"),
-            x=term_pref_pivot.columns,
-            y=term_pref_pivot.index,
-            color_continuous_scale="RdYlGn",
-            range_color=[0, 10],
-            title="Term Preferences Heatmap (t_jk)"
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-    
-    with col2:
-        # Term preference comparison
-        term_avg = term_pref_df.groupby('Term')['Preference'].mean().reset_index()
-        fig4 = px.bar(
-            term_avg, x='Term', y='Preference',
-            title="Average Term Preferences",
-            color='Preference',
-            color_continuous_scale="RdYlGn",
-            range_color=[0, 10]
-        )
-        st.plotly_chart(fig4, use_container_width=True)
-    
-    # Capacity Analysis
-    st.subheader("⚖️ Capacity vs Demand Analysis")
-    
-    # Calculate capacity and demand per term
-    capacity_data = []
-    demand_data = []
-    
-    for term in terms:
-        # Calculate total capacity (sum of L_jk for all professors in this term)
-        term_capacity = sum([professor_term_limits.get((prof, term), 0) for prof in professors])
-        
-        # Calculate total demand (sum of n_ik for all courses offered in this term)
-        term_demand = sum([course_streams.get((course, term), 0) 
-                          for course in courses 
-                          if course_offerings.get((course, term), 0) == 1])
-        
-        capacity_data.append({
-            'Term': term,
-            'Type': 'Capacity',
-            'Streams': term_capacity
-        })
-        demand_data.append({
-            'Term': term,
-            'Type': 'Demand',
-            'Streams': term_demand
-        })
-    
-    capacity_demand_df = pd.DataFrame(capacity_data + demand_data)
-    
-    fig5 = px.bar(
-        capacity_demand_df, x='Term', y='Streams', color='Type',
-        title="Capacity vs Demand by Term",
-        barmode='group',
-        color_discrete_map={'Capacity': 'lightblue', 'Demand': 'orange'}
+    # Large term preferences heatmap
+    fig2 = px.imshow(
+        term_pref_pivot.values,
+        labels=dict(x="Term", y="Professor", color="Preference Score"),
+        x=term_pref_pivot.columns,
+        y=term_pref_pivot.index,
+        color_continuous_scale="RdYlGn",
+        range_color=[0, 10],
+        title="Term Preferences Matrix - All Staff vs Terms",
+        aspect="auto"
     )
-    st.plotly_chart(fig5, use_container_width=True)
     
-    # Feasibility warnings
-    st.subheader("⚠️ Feasibility Warnings")
+    # Make it large for 24 staff
+    fig2.update_layout(
+        height=max(600, len(professors) * 25),  # Dynamic height based on professor count
+        width=800,
+        font=dict(size=12),
+        yaxis=dict(tickmode='array', tickvals=list(range(len(professors))), ticktext=professors)
+    )
     
-    warnings = []
+    st.plotly_chart(fig2, use_container_width=True)
+    
+    # Term preference statistics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Average Term Preference", f"{term_pref_df['Preference'].mean():.2f}")
+    with col2:
+        zero_term_prefs = len(term_pref_df[term_pref_df['Preference'] == 0])
+        st.metric("Zero Term Preferences", zero_term_prefs)
+        if zero_term_prefs > 0:
+            st.warning(f"⚠️ {zero_term_prefs} professors cannot teach in certain terms")
+    with col3:
+        # Show term popularity
+        term_avg = term_pref_df.groupby('Term')['Preference'].mean()
+        most_popular_term = term_avg.idxmax()
+        st.metric("Most Popular Term", f"{most_popular_term} ({term_avg[most_popular_term]:.1f})")
+    
+    # Feasibility Analysis
+    st.subheader("Feasibility Analysis")
     
     # Check term-wise feasibility
+    feasibility_data = []
+    warnings = []
+    
     for term in terms:
         term_capacity = sum([professor_term_limits.get((prof, term), 0) for prof in professors])
         term_demand = sum([course_streams.get((course, term), 0) 
                           for course in courses 
                           if course_offerings.get((course, term), 0) == 1])
+        
+        feasibility_data.append({
+            'Term': term,
+            'Capacity (Streams)': term_capacity,
+            'Demand (Streams)': term_demand,
+            'Balance': term_capacity - term_demand,
+            'Status': '✅ Feasible' if term_capacity >= term_demand else '❌ Over-demand'
+        })
         
         if term_demand > term_capacity:
             warnings.append(f"**{term}**: Demand ({term_demand}) exceeds capacity ({term_capacity})")
     
-    # Check total course feasibility
+    feasibility_df = pd.DataFrame(feasibility_data)
+    st.dataframe(feasibility_df, hide_index=True)
+    
+    # Overall feasibility check
     total_offerings = sum([1 for course in courses for term in terms 
                           if course_offerings.get((course, term), 0) == 1])
     total_capacity = sum(professor_total_load.values())
     
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Course Offerings", total_offerings)
+    with col2:
+        st.metric("Total Professor Capacity", total_capacity)
+    
     if total_offerings > total_capacity:
-        warnings.append(f"**Total Courses**: Offerings ({total_offerings}) exceed total capacity ({total_capacity})")
+        warnings.append(f"**Overall**: Total offerings ({total_offerings}) exceed total professor capacity ({total_capacity})")
     
-    # Check for professors with zero availability
-    zero_availability_profs = []
-    for prof in professors:
-        total_prof_capacity = sum([professor_term_limits.get((prof, term), 0) for term in terms])
-        if total_prof_capacity == 0:
-            zero_availability_profs.append(prof)
-    
-    if zero_availability_profs:
-        warnings.append(f"**Zero Availability**: {', '.join(zero_availability_profs)} have no teaching capacity")
-    
+    # Display warnings
     if warnings:
+        st.subheader("⚠️ Feasibility Warnings")
         for warning in warnings:
             st.error(warning)
     else:
         st.success("✅ No obvious feasibility issues detected")
-    
-    # Professor Workload Analysis
-    st.subheader("👨‍🏫 Professor Workload Analysis")
-    
-    workload_analysis = []
-    for prof in professors:
-        total_term_capacity = sum([professor_term_limits.get((prof, term), 0) for term in terms])
-        total_course_capacity = professor_total_load.get(prof, 0)
-        
-        # Average preferences
-        avg_course_pref = np.mean([course_preferences.get((course, prof), 0) for course in courses])
-        avg_term_pref = np.mean([term_preferences.get((prof, term), 0) for term in terms])
-        
-        workload_analysis.append({
-            'Professor': prof,
-            'Total Stream Capacity': total_term_capacity,
-            'Total Course Capacity': total_course_capacity,
-            'Avg Course Pref': f"{avg_course_pref:.1f}",
-            'Avg Term Pref': f"{avg_term_pref:.1f}"
-        })
-    
-    workload_df = pd.DataFrame(workload_analysis)
-    st.dataframe(workload_df, hide_index=True)
-    
-    # Course Offering Pattern Analysis
-    st.subheader("📚 Course Offering Patterns")
-    
-    # Course offerings by term
-    offering_pattern = []
-    for course in courses:
-        terms_offered = [term for term in terms if course_offerings.get((course, term), 0) == 1]
-        total_streams = sum([course_streams.get((course, term), 0) for term in terms])
-        
-        offering_pattern.append({
-            'Course': course,
-            'Terms Offered': len(terms_offered),
-            'Terms': ', '.join(terms_offered) if terms_offered else 'None',
-            'Total Streams': total_streams
-        })
-    
-    pattern_df = pd.DataFrame(offering_pattern)
-    st.dataframe(pattern_df, hide_index=True)
-    
-    # Summary recommendations
-    st.subheader("💡 Recommendations")
-    
-    recommendations = []
-    
-    # Check preference diversity
-    pref_std = pref_df['Preference'].std()
-    if pref_std < 2:
-        recommendations.append("Consider increasing preference diversity - all preferences are very similar")
-    
-    # Check for courses with low preferences across all professors
-    for course in courses:
-        course_prefs = [course_preferences.get((course, prof), 0) for prof in professors]
-        if max(course_prefs) <= 3:
-            recommendations.append(f"Course {course} has low preferences from all professors")
-    
-    # Check for professors with very low term preferences
-    for prof in professors:
-        prof_term_prefs = [term_preferences.get((prof, term), 0) for term in terms]
-        if max(prof_term_prefs) <= 3:
-            recommendations.append(f"Professor {prof} has low term preferences - may need schedule adjustment")
-    
-    if recommendations:
-        for rec in recommendations:
-            st.info(f"💡 {rec}")
     
     # Navigation
     col1, col2 = st.columns(2)
