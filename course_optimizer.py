@@ -226,14 +226,14 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="RASTA-OP - Resource Allocation System for Teaching Assignments",
+        page_title="RASTA-OP - Resource Assignment Scheduling Tool for Academic Optimization",
         page_icon="🎓",
         layout="wide"
     )
     
     st.title("🎓 RASTA-OP")
-    st.markdown("**Resource Allocation System for Teaching Assignments - Optimization Platform**")
-    st.markdown("Optimize faculty assignments with mathematical formulation and matrix visualization")
+    st.markdown("**Resource Assignment Scheduling Tool for Academic Optimization**")
+    st.markdown("Optimize faculty assignments with mathematical precision")
     st.markdown("---")
     
     # Input method selection
@@ -325,22 +325,22 @@ def show_results_step_fixed():
         
         # 1. MAIN MATRIX - ALL TERMS COMBINED
         st.subheader("📊 Assignment Matrix - All Terms Combined")
-        st.markdown("**Courses (rows) × Staff (columns) | Shows: Term (T1/T2/T3) if assigned, 0 = Not assigned**")
+        st.markdown("**Courses (rows) × Staff (columns) | Shows: 1-TermCode or 0 for no assignment**")
         
         # Create matrix with proper structure
         matrix_all_terms = pd.DataFrame(
             index=courses,     # Course names as row index
             columns=professors, # Professor names as column headers
-            dtype=object  # Changed to object to store strings like "T1", "T2"
+            dtype=object  # Changed to object to store strings like "1-T1"
         )
         # Initialize with zeros
-        matrix_all_terms[:] = "0"
+        matrix_all_terms[:] = 0
         
-        # Fill with assignments - showing the TERM instead of just 1
+        # Fill with assignments showing term information
         if solution.get('assignments'):
             for (course, term), professor in solution['assignments'].items():
                 if course in matrix_all_terms.index and professor in matrix_all_terms.columns:
-                    matrix_all_terms.loc[course, professor] = term  # Show T1, T2, or T3
+                    matrix_all_terms.loc[course, professor] = f"1-{term}"
         
         # Display matrix
         st.dataframe(
@@ -350,32 +350,29 @@ def show_results_step_fixed():
         )
         
         # Matrix statistics
-        assigned_cells = matrix_all_terms[matrix_all_terms != "0"].count().sum()
-        courses_assigned = (matrix_all_terms != "0").any(axis=1).sum()
-        active_staff = (matrix_all_terms != "0").any(axis=0).sum()
+        assignment_count = 0
+        if solution.get('assignments'):
+            assignment_count = len(solution['assignments'])
+        
+        courses_assigned = 0
+        active_staff = 0
+        
+        if solution.get('assignments'):
+            assigned_courses = set()
+            active_professors = set()
+            for (course, term), professor in solution['assignments'].items():
+                assigned_courses.add(course)
+                active_professors.add(professor)
+            courses_assigned = len(assigned_courses)
+            active_staff = len(active_professors)
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Assignments", int(assigned_cells))
+            st.metric("Total Assignments", assignment_count)
         with col2:
             st.metric("Courses Assigned", f"{courses_assigned}/{len(courses)}")
         with col3:
             st.metric("Active Staff", f"{active_staff}/{len(professors)}")
-        
-        # Show term distribution
-        term_counts = {}
-        for term in terms:
-            count = (matrix_all_terms == term).sum().sum()
-            term_counts[term] = count
-        
-        st.write("**Assignment Distribution by Term:**")
-        term_col1, term_col2, term_col3 = st.columns(3)
-        with term_col1:
-            st.metric("T1 Assignments", term_counts.get('T1', 0))
-        with term_col2:
-            st.metric("T2 Assignments", term_counts.get('T2', 0))
-        with term_col3:
-            st.metric("T3 Assignments", term_counts.get('T3', 0))
         
         st.markdown("---")
         
