@@ -1527,11 +1527,6 @@ def show_data_analysis_step():
             pref_value = course_preferences.get((course, prof), 0)
             course_pref_matrix.loc[course, prof] = pref_value
     
-    # Debug: Show actual values being used
-    st.write("Debug - Sample preference values:")
-    sample_prefs = [(key, value) for key, value in list(course_preferences.items())[:5]]
-    st.write(sample_prefs)
-    
     # Large course preferences heatmap
     fig1 = px.imshow(
         course_pref_matrix.values,
@@ -1580,11 +1575,6 @@ def show_data_analysis_step():
         for term in terms:
             term_value = term_preferences.get((prof, term), 0)
             term_pref_matrix.loc[prof, term] = term_value
-    
-    # Debug: Show sample term preferences
-    st.write("Debug - Sample term preference values:")
-    sample_term_prefs = [(key, value) for key, value in list(term_preferences.items())[:5]]
-    st.write(sample_term_prefs)
     
     # Large term preferences heatmap
     fig2 = px.imshow(
