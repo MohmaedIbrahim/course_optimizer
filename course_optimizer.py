@@ -226,13 +226,14 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="Course Covering Optimizer - Fixed Matrix Display",
+        page_title="RASTA-OP - Resource Assignment Scheduling Tool for Academic Optimization",
         page_icon="🎓",
         layout="wide"
     )
     
-    st.title("🎓 Course Covering Optimizer - Matrix Display")
-    st.markdown("Optimize faculty assignments with proper matrix visualization")
+    st.title("🎓 RASTA-OP")
+    st.markdown("**Resource Assignment Scheduling Tool for Academic Optimization**")
+    st.markdown("Optimize faculty assignments with mathematical precision")
     st.markdown("---")
     
     # Input method selection
@@ -241,7 +242,7 @@ def main():
         ["Manual Input", "Excel Upload"]
     )
     
-    # Initialize session state
+    # Initialize session state with all required variables
     if 'step' not in st.session_state:
         st.session_state.step = 1
     if 'courses' not in st.session_state:
@@ -250,6 +251,20 @@ def main():
         st.session_state.professors = []
     if 'terms' not in st.session_state:
         st.session_state.terms = ['T1', 'T2', 'T3']
+    if 'course_offerings' not in st.session_state:
+        st.session_state.course_offerings = {}
+    if 'course_streams' not in st.session_state:
+        st.session_state.course_streams = {}
+    if 'professor_total_load' not in st.session_state:
+        st.session_state.professor_total_load = {}
+    if 'professor_term_limits' not in st.session_state:
+        st.session_state.professor_term_limits = {}
+    if 'course_preferences' not in st.session_state:
+        st.session_state.course_preferences = {}
+    if 'term_preferences' not in st.session_state:
+        st.session_state.term_preferences = {}
+    if 'input_method' not in st.session_state:
+        st.session_state.input_method = input_method
     
     # Navigation based on input method
     if input_method == "Excel Upload":
@@ -274,16 +289,59 @@ def show_results_step_fixed():
     """Show results with proper matrix display - FIXED VERSION."""
     st.header("Optimization Results - Matrix Format")
     
-    # Get data from session state
-    courses = st.session_state.courses
-    professors = st.session_state.professors
-    terms = st.session_state.terms
-    course_offerings = st.session_state.course_offerings
-    course_streams = st.session_state.course_streams
-    professor_total_load = st.session_state.professor_total_load
-    professor_term_limits = st.session_state.professor_term_limits
-    course_preferences = st.session_state.course_preferences
-    term_preferences = st.session_state.term_preferences
+    # Get data from session state with safety checks
+    courses = st.session_state.get('courses', [])
+    professors = st.session_state.get('professors', [])
+    terms = st.session_state.get('terms', ['T1', 'T2', 'T3'])
+    course_offerings = st.session_state.get('course_offerings', {})
+    course_streams = st.session_state.get('course_streams', {})
+    professor_total_load = st.session_state.get('professor_total_load', {})
+    professor_term_limits = st.session_state.get('professor_term_limits', {})
+    course_preferences = st.session_state.get('course_preferences', {})
+    term_preferences = st.session_state.get('term_preferences', {})
+    
+    # Check if we have the required data
+    if not courses or not professors:
+        st.error("No course or professor data found. Please go back and set up the data first.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("← Back to Setup"):
+                st.session_state.step = 1
+                st.rerun()
+        with col2:
+            if st.button("Start Over"):
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+        return
+    
+    # Show current data summary for debugging
+    st.info(f"Data loaded: {len(courses)} courses, {len(professors)} professors")
+    
+    # If no constraint data, create sample data for testing
+    if not course_offerings:
+        st.warning("No course offerings data found. Creating sample data for testing...")
+        
+        # Create sample data
+        for course in courses:
+            for term in terms:
+                course_offerings[(course, term)] = 1 if term == 'T1' else 0  # Sample: all courses in T1
+                course_streams[(course, term)] = 1 if term == 'T1' else 0
+        
+        for prof in professors:
+            professor_total_load[prof] = 3  # Sample: 3 courses max
+            for term in terms:
+                professor_term_limits[(prof, term)] = 2  # Sample: 2 streams per term
+        
+        # Sample preferences (neutral)
+        for course in courses:
+            for prof in professors:
+                course_preferences[(course, prof)] = 5
+        
+        for prof in professors:
+            for term in terms:
+                term_preferences[(prof, term)] = 5
     
     # Run optimization
     with st.spinner("Running optimization..."):
@@ -324,22 +382,22 @@ def show_results_step_fixed():
         
         # 1. MAIN MATRIX - ALL TERMS COMBINED
         st.subheader("📊 Assignment Matrix - All Terms Combined")
-        st.markdown("**Courses (rows) × Staff (columns) | 1 = Assigned, 0 = Not assigned**")
+        st.markdown("**Courses (rows) × Staff (columns) | Shows: 1-TermCode or 0 for no assignment**")
         
         # Create matrix with proper structure
         matrix_all_terms = pd.DataFrame(
             index=courses,     # Course names as row index
             columns=professors, # Professor names as column headers
-            dtype=int
+            dtype=object  # Changed to object to store strings like "1-T1"
         )
         # Initialize with zeros
         matrix_all_terms[:] = 0
         
-        # Fill with assignments
+        # Fill with assignments showing term information
         if solution.get('assignments'):
             for (course, term), professor in solution['assignments'].items():
                 if course in matrix_all_terms.index and professor in matrix_all_terms.columns:
-                    matrix_all_terms.loc[course, professor] = 1
+                    matrix_all_terms.loc[course, professor] = f"1-{term}"
         
         # Display matrix
         st.dataframe(
@@ -349,13 +407,25 @@ def show_results_step_fixed():
         )
         
         # Matrix statistics
-        total_assignments = matrix_all_terms.sum().sum()
-        courses_assigned = (matrix_all_terms.sum(axis=1) > 0).sum()
-        active_staff = (matrix_all_terms.sum(axis=0) > 0).sum()
+        assignment_count = 0
+        if solution.get('assignments'):
+            assignment_count = len(solution['assignments'])
+        
+        courses_assigned = 0
+        active_staff = 0
+        
+        if solution.get('assignments'):
+            assigned_courses = set()
+            active_professors = set()
+            for (course, term), professor in solution['assignments'].items():
+                assigned_courses.add(course)
+                active_professors.add(professor)
+            courses_assigned = len(assigned_courses)
+            active_staff = len(active_professors)
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Assignments", int(total_assignments))
+            st.metric("Total Assignments", assignment_count)
         with col2:
             st.metric("Courses Assigned", f"{courses_assigned}/{len(courses)}")
         with col3:
@@ -459,39 +529,219 @@ def show_results_step_fixed():
 
 # Add placeholder functions for other steps
 def show_excel_upload_step():
-    st.header("Excel Upload - Placeholder")
-    st.write("Excel upload functionality would go here")
-    if st.button("Next"):
+    st.header("Excel Upload")
+    st.write("Upload your Excel file with the required format")
+    
+    # Sample data for testing
+    if st.button("Use Sample Data for Testing"):
+        # Set sample courses and professors
+        st.session_state.courses = ["ACTL1", "ACTL2", "ACTL3", "ACTL4", "ACTL5"]
+        st.session_state.professors = ["Jonathan", "JK", "Patrick", "Andres"]
+        
+        # Set sample constraints
+        course_offerings = {}
+        course_streams = {}
+        for course in st.session_state.courses:
+            for term in st.session_state.terms:
+                course_offerings[(course, term)] = 1 if term in ['T1', 'T3'] else 0
+                course_streams[(course, term)] = 1 if course_offerings[(course, term)] == 1 else 0
+        
+        st.session_state.course_offerings = course_offerings
+        st.session_state.course_streams = course_streams
+        
+        # Set sample professor constraints
+        professor_total_load = {}
+        professor_term_limits = {}
+        for prof in st.session_state.professors:
+            professor_total_load[prof] = 4
+            for term in st.session_state.terms:
+                professor_term_limits[(prof, term)] = 2
+        
+        st.session_state.professor_total_load = professor_total_load
+        st.session_state.professor_term_limits = professor_term_limits
+        
+        # Set sample preferences
+        course_preferences = {}
+        term_preferences = {}
+        for course in st.session_state.courses:
+            for prof in st.session_state.professors:
+                course_preferences[(course, prof)] = 5  # Neutral preference
+        
+        for prof in st.session_state.professors:
+            for term in st.session_state.terms:
+                term_preferences[(prof, term)] = 5  # Neutral preference
+        
+        st.session_state.course_preferences = course_preferences
+        st.session_state.term_preferences = term_preferences
+        
+        st.success("Sample data loaded! You can now proceed to optimization.")
+    
+    if st.button("Next (Data Analysis)"):
         st.session_state.step = 2
         st.rerun()
 
 def show_data_analysis_step():
-    st.header("Data Analysis - Placeholder") 
-    st.write("Data analysis would go here")
-    if st.button("Run Optimization"):
-        st.session_state.step = 3
-        st.rerun()
+    st.header("Data Analysis")
+    
+    courses = st.session_state.get('courses', [])
+    professors = st.session_state.get('professors', [])
+    
+    if courses and professors:
+        st.success(f"Data loaded: {len(courses)} courses, {len(professors)} professors")
+        
+        # Show basic info
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Courses:**")
+            st.write(", ".join(courses))
+        with col2:
+            st.write("**Professors:**")
+            st.write(", ".join(professors))
+    else:
+        st.error("No data found. Please go back and load data first.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("← Back"):
+            st.session_state.step = 1
+            st.rerun()
+    with col2:
+        if st.button("Run Optimization"):
+            st.session_state.step = 3
+            st.rerun()
 
 def show_setup_step():
-    st.header("Setup - Placeholder")
-    st.write("Manual setup would go here")
+    st.header("Manual Setup")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Courses")
+        courses_input = st.text_area(
+            "Enter courses (one per line):",
+            value="ACTL1\nACTL2\nACTL3\nACTL4\nACTL5",
+            height=120
+        )
+    
+    with col2:
+        st.subheader("Professors")
+        professors_input = st.text_area(
+            "Enter professors (one per line):",
+            value="Jonathan\nJK\nPatrick\nAndres",
+            height=120
+        )
+    
     if st.button("Next"):
-        st.session_state.step = 2
-        st.rerun()
+        courses = [c.strip() for c in courses_input.split('\n') if c.strip()]
+        professors = [p.strip() for p in professors_input.split('\n') if p.strip()]
+        
+        if courses and professors:
+            st.session_state.courses = courses
+            st.session_state.professors = professors
+            st.session_state.step = 2
+            st.rerun()
+        else:
+            st.error("Please enter at least one course and one professor.")
 
 def show_constraints_step():
-    st.header("Constraints - Placeholder")
-    st.write("Constraints setup would go here")
-    if st.button("Next"):
+    st.header("Setup Constraints")
+    
+    courses = st.session_state.get('courses', [])
+    professors = st.session_state.get('professors', [])
+    
+    if not courses or not professors:
+        st.error("No course/professor data found. Please go back to setup.")
+        if st.button("← Back to Setup"):
+            st.session_state.step = 1
+            st.rerun()
+        return
+    
+    st.write("Setting up basic constraints...")
+    
+    # Simple constraint setup
+    if st.button("Use Default Constraints"):
+        # Set default offerings (all courses in T1 and T3)
+        course_offerings = {}
+        course_streams = {}
+        for course in courses:
+            for term in st.session_state.terms:
+                course_offerings[(course, term)] = 1 if term in ['T1', 'T3'] else 0
+                course_streams[(course, term)] = 1 if course_offerings[(course, term)] == 1 else 0
+        
+        st.session_state.course_offerings = course_offerings
+        st.session_state.course_streams = course_streams
+        
+        # Set default professor constraints
+        professor_total_load = {prof: 4 for prof in professors}
+        professor_term_limits = {}
+        for prof in professors:
+            for term in st.session_state.terms:
+                professor_term_limits[(prof, term)] = 2
+        
+        st.session_state.professor_total_load = professor_total_load
+        st.session_state.professor_term_limits = professor_term_limits
+        
+        st.success("Default constraints set!")
         st.session_state.step = 3
+        st.rerun()
+    
+    if st.button("← Back"):
+        st.session_state.step = 1
         st.rerun()
 
 def show_preferences_step():
-    st.header("Preferences - Placeholder")
-    st.write("Preferences setup would go here")
-    if st.button("Run Optimization"):
+    st.header("Setup Preferences")
+    
+    courses = st.session_state.get('courses', [])
+    professors = st.session_state.get('professors', [])
+    
+    if not courses or not professors:
+        st.error("No data found. Please complete previous steps.")
+        if st.button("← Back"):
+            st.session_state.step = 2
+            st.rerun()
+        return
+    
+    if st.button("Use Default Preferences (All 5s)"):
+        # Set neutral preferences for all
+        course_preferences = {}
+        term_preferences = {}
+        
+        for course in courses:
+            for prof in professors:
+                course_preferences[(course, prof)] = 5
+        
+        for prof in professors:
+            for term in st.session_state.terms:
+                term_preferences[(prof, term)] = 5
+        
+        st.session_state.course_preferences = course_preferences
+        st.session_state.term_preferences = term_preferences
+        
+        st.success("Default preferences set!")
         st.session_state.step = 4
         st.rerun()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("← Back"):
+            st.session_state.step = 2
+            st.rerun()
+    with col2:
+        if st.button("Skip to Results"):
+            # Set defaults and go to results
+            course_preferences = {}
+            term_preferences = {}
+            for course in courses:
+                for prof in professors:
+                    course_preferences[(course, prof)] = 5
+            for prof in professors:
+                for term in st.session_state.terms:
+                    term_preferences[(prof, term)] = 5
+            st.session_state.course_preferences = course_preferences
+            st.session_state.term_preferences = term_preferences
+            st.session_state.step = 4
+            st.rerun()
 
 
 if __name__ == "__main__":
