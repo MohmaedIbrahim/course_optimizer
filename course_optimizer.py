@@ -226,12 +226,12 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="RASTA-OP",
+        page_title="RASTA-OP - Course Assignment Optimizer",
         page_icon="🎓",
         layout="wide"
     )
     
-    st.title("🎓 RASTA-OP")
+    st.title("🎓 RASTA-OP - Course Assignment Optimizer")
     st.markdown("Optimize faculty assignments using exact mathematical formulation with L_jk and b_j constraints")
     st.markdown("---")
     
@@ -1518,30 +1518,31 @@ def show_data_analysis_step():
     st.subheader("Course Preferences Heatmap (c_ij)")
     st.markdown("**Scale: 0 = Cannot teach, 10 = Strongly prefer**")
     
-    # Create preference matrix for visualization
-    pref_matrix_data = []
+    # Create preference matrix for visualization - ensure correct mapping
+    course_pref_matrix = pd.DataFrame(index=courses, columns=professors, dtype=float)
+    
+    # Fill matrix with actual preference values
     for course in courses:
         for prof in professors:
             pref_value = course_preferences.get((course, prof), 0)
-            pref_matrix_data.append({
-                'Course': course,
-                'Professor': prof,
-                'Preference': pref_value
-            })
+            course_pref_matrix.loc[course, prof] = pref_value
     
-    pref_df = pd.DataFrame(pref_matrix_data)
-    pref_pivot = pref_df.pivot(index='Course', columns='Professor', values='Preference')
+    # Debug: Show actual values being used
+    st.write("Debug - Sample preference values:")
+    sample_prefs = [(key, value) for key, value in list(course_preferences.items())[:5]]
+    st.write(sample_prefs)
     
     # Large course preferences heatmap
     fig1 = px.imshow(
-        pref_pivot.values,
+        course_pref_matrix.values,
         labels=dict(x="Professor", y="Course", color="Preference Score"),
-        x=pref_pivot.columns,
-        y=pref_pivot.index,
+        x=course_pref_matrix.columns.tolist(),  # Ensure proper column names
+        y=course_pref_matrix.index.tolist(),    # Ensure proper row names
         color_continuous_scale="RdYlGn",
         range_color=[0, 10],
         title="Course Preferences Matrix - All Courses vs All Staff",
-        aspect="auto"
+        aspect="auto",
+        text_auto=True  # Show values in cells
     )
     
     # Make it large for 60 courses and 24 staff
@@ -1549,8 +1550,8 @@ def show_data_analysis_step():
         height=max(800, len(courses) * 15),  # Dynamic height based on course count
         width=max(1200, len(professors) * 40),  # Dynamic width based on professor count
         font=dict(size=10),
-        xaxis=dict(tickangle=45),
-        yaxis=dict(tickmode='array', tickvals=list(range(len(courses))), ticktext=courses)
+        xaxis=dict(tickangle=45, title="Staff Members"),
+        yaxis=dict(title="Courses")
     )
     
     st.plotly_chart(fig1, use_container_width=True)
@@ -1558,41 +1559,44 @@ def show_data_analysis_step():
     # Course preference statistics summary
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Average Preference", f"{pref_df['Preference'].mean():.2f}")
+        avg_pref = course_pref_matrix.mean().mean()
+        st.metric("Average Preference", f"{avg_pref:.2f}")
     with col2:
-        high_prefs = len(pref_df[pref_df['Preference'] >= 8])
+        high_prefs = (course_pref_matrix >= 8).sum().sum()
         st.metric("High Preferences (≥8)", high_prefs)
     with col3:
-        st.metric("Preference Range", f"{pref_df['Preference'].min():.0f} - {pref_df['Preference'].max():.0f}")
+        pref_range = f"{course_pref_matrix.min().min():.0f} - {course_pref_matrix.max().max():.0f}"
+        st.metric("Preference Range", pref_range)
     
     # Term Preferences Heatmap (t_jk)
     st.subheader("Term Preferences Heatmap (t_jk)")
     st.markdown("**Scale: 0 = Cannot teach, 10 = Strongly prefer**")
     
-    # Create term preference matrix
-    term_pref_data = []
+    # Create term preference matrix - ensure correct mapping
+    term_pref_matrix = pd.DataFrame(index=professors, columns=terms, dtype=float)
+    
+    # Fill matrix with actual term preference values
     for prof in professors:
         for term in terms:
             term_value = term_preferences.get((prof, term), 0)
-            term_pref_data.append({
-                'Professor': prof,
-                'Term': term,
-                'Preference': term_value
-            })
+            term_pref_matrix.loc[prof, term] = term_value
     
-    term_pref_df = pd.DataFrame(term_pref_data)
-    term_pref_pivot = term_pref_df.pivot(index='Professor', columns='Term', values='Preference')
+    # Debug: Show sample term preferences
+    st.write("Debug - Sample term preference values:")
+    sample_term_prefs = [(key, value) for key, value in list(term_preferences.items())[:5]]
+    st.write(sample_term_prefs)
     
     # Large term preferences heatmap
     fig2 = px.imshow(
-        term_pref_pivot.values,
+        term_pref_matrix.values,
         labels=dict(x="Term", y="Professor", color="Preference Score"),
-        x=term_pref_pivot.columns,
-        y=term_pref_pivot.index,
+        x=term_pref_matrix.columns.tolist(),  # Term names
+        y=term_pref_matrix.index.tolist(),    # Professor names
         color_continuous_scale="RdYlGn",
         range_color=[0, 10],
         title="Term Preferences Matrix - All Staff vs Terms",
-        aspect="auto"
+        aspect="auto",
+        text_auto=True  # Show values in cells
     )
     
     # Make it large for 24 staff
@@ -1600,7 +1604,8 @@ def show_data_analysis_step():
         height=max(600, len(professors) * 25),  # Dynamic height based on professor count
         width=800,
         font=dict(size=12),
-        yaxis=dict(tickmode='array', tickvals=list(range(len(professors))), ticktext=professors)
+        xaxis=dict(title="Terms"),
+        yaxis=dict(title="Staff Members")
     )
     
     st.plotly_chart(fig2, use_container_width=True)
@@ -1608,14 +1613,16 @@ def show_data_analysis_step():
     # Term preference statistics
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Average Term Preference", f"{term_pref_df['Preference'].mean():.2f}")
+        avg_term_pref = term_pref_matrix.mean().mean()
+        st.metric("Average Term Preference", f"{avg_term_pref:.2f}")
     with col2:
         # Show term popularity
-        term_avg = term_pref_df.groupby('Term')['Preference'].mean()
+        term_avg = term_pref_matrix.mean()
         most_popular_term = term_avg.idxmax()
         st.metric("Most Popular Term", f"{most_popular_term} ({term_avg[most_popular_term]:.1f})")
     with col3:
-        st.metric("Term Preference Range", f"{term_pref_df['Preference'].min():.0f} - {term_pref_df['Preference'].max():.0f}")
+        term_range = f"{term_pref_matrix.min().min():.0f} - {term_pref_matrix.max().max():.0f}"
+        st.metric("Term Preference Range", term_range)
     
     # Navigation
     col1, col2 = st.columns(2)
@@ -1744,4 +1751,3 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
-
