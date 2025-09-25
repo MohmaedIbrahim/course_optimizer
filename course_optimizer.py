@@ -1578,38 +1578,62 @@ def show_data_analysis_step():
         for prof in professors:
             score = course_pref_matrix.loc[course, prof]
             if score > 0:  # Only consider positive scores
-                all_scores.add(score)
+                all_scores.add(int(score))  # Ensure integer scores
     
     # Sort scores in descending order for better display
     sorted_scores = sorted(all_scores, reverse=True)
     
-    # For each score, find courses with multiple professors having that score
+    # Prepare data for all scores with conflicts
+    scores_with_conflicts = []
+    all_score_data = {}
+    
     for score in sorted_scores:
         courses_with_multiple_score = []
         for course in courses:
             profs_with_score = []
             for prof in professors:
-                prof_score = course_pref_matrix.loc[course, prof]
+                prof_score = int(course_pref_matrix.loc[course, prof])
                 if prof_score == score:
                     profs_with_score.append(prof)
             
             if len(profs_with_score) > 1:  # Only courses with multiple professors having this score
                 courses_with_multiple_score.append({
                     'Course': course,
-                    f'Professors with Score {score}': ', '.join(profs_with_score),
+                    'Professors': ', '.join(profs_with_score),
                     'Count': len(profs_with_score)
                 })
         
-        # Display table only if there are courses with multiple professors having this score
-        if courses_with_multiple_score:
-            st.write(f"**Courses with Multiple Professors Scoring {score}:**")
-            multiple_score_df = pd.DataFrame(courses_with_multiple_score)
-            st.dataframe(multiple_score_df, hide_index=True)
-            st.markdown("")  # Add some spacing between tables
+        if courses_with_multiple_score:  # Only store if there are conflicts
+            scores_with_conflicts.append(score)
+            all_score_data[score] = courses_with_multiple_score
     
-    # If no duplicate scores found at all
-    if not any(len([prof for prof in professors if course_pref_matrix.loc[course, prof] == score]) > 1 
-              for score in sorted_scores for course in courses):
+    # Create tabs only for scores that have conflicts
+    if scores_with_conflicts:
+        # Create tab labels
+        tab_names = [f"Score {score}" for score in scores_with_conflicts]
+        
+        # Create the tabs
+        score_tabs = st.tabs(tab_names)
+        
+        # Fill each tab with its corresponding data
+        for i, score in enumerate(scores_with_conflicts):
+            with score_tabs[i]:
+                st.markdown(f"**Courses where multiple professors gave score {score}:**")
+                
+                # Create and display the dataframe for this score
+                score_df = pd.DataFrame(all_score_data[score])
+                st.dataframe(score_df, hide_index=True, use_container_width=True)
+                
+                # Add summary info
+                total_conflicts = len(all_score_data[score])
+                total_professors = sum([row['Count'] for row in all_score_data[score]])
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Courses with Conflicts", total_conflicts)
+                with col2:
+                    st.metric("Total Professor Instances", total_professors)
+    else:
         st.info("No courses have multiple professors with the same score")
     
     # Term Preferences Heatmap (t_jk)
