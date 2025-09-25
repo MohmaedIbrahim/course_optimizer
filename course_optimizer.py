@@ -1,3 +1,12 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import pulp
+import numpy as np
+from typing import Dict, List, Tuple
+import io
+
 class CourseCoveringProblem:
     """Course covering optimization problem solver matching exact mathematical formulation."""
     
