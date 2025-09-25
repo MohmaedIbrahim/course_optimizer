@@ -1545,7 +1545,7 @@ def show_data_analysis_step():
         height=max(800, len(courses) * 20),  # Increased spacing for course names
         width=max(1200, len(professors) * 40),  # Dynamic width based on professor count
         font=dict(size=10),
-        xaxis=dict(tickangle=45, title="Staff Members"),
+        xaxis=dict(tickangle=90, title="Staff Members"),  # Changed to 90 degrees rotation
         yaxis=dict(
             title="Courses",
             tickmode='array',
