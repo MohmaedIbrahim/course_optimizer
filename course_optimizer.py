@@ -14,9 +14,10 @@ class CourseCoveringProblem:
                  course_preferences: Dict[Tuple[str, str], float],  # c_ij (0-10 scale)
                  term_preferences: Dict[Tuple[str, str], float],    # t_jk (0-10 scale)
                  course_streams: Dict[Tuple[str, str], int],        # n_ik: streams per course per term
-                 professor_total_load: Dict[str, int],              # b_j: total courses per professor
-                 professor_term_limits: Dict[Tuple[str, str], int], # L_jk: max streams per prof per term (independent from b_j)
-                 course_offerings: Dict[Tuple[str, str], int]):     # O_ik: 1 if course offered in term
+                 professor_term_limits: Dict[Tuple[str, str], int], # L_jk: max streams per prof per term
+                 course_offerings: Dict[Tuple[str, str], int],      # O_ik: 1 if course offered in term
+                 use_total_load_constraint: bool = True,            # Whether to use b_j constraint
+                 professor_total_load: Dict[str, int] = None):      # b_j: total courses per professor (optional)
         
         self.courses = courses  # S
         self.professors = professors  # P
@@ -24,9 +25,10 @@ class CourseCoveringProblem:
         self.course_preferences = course_preferences  # c_ij (0-10, higher is better)
         self.term_preferences = term_preferences  # t_jk (0-10, higher is better)
         self.course_streams = course_streams  # n_ik
-        self.professor_total_load = professor_total_load  # b_j (total teaching load)
-        self.professor_term_limits = professor_term_limits  # L_jk (independent from b_j)
+        self.professor_term_limits = professor_term_limits  # L_jk
         self.course_offerings = course_offerings  # O_ik (parameter, not variable)
+        self.use_total_load_constraint = use_total_load_constraint
+        self.professor_total_load = professor_total_load or {}  # b_j (optional)
         
         self.model = None
         self.x_vars = {}  # x_ijk
@@ -98,20 +100,22 @@ class CourseCoveringProblem:
                     f"StreamLoad_L_{professor}_{term}"
                 )
         
-        # Constraint (3): Total Teaching Load Constraint - b_j limits  
-        # sum(n_ik * x_ijk) <= b_j for all j (total teaching load across all terms)
-        for professor in self.professors:
-            total_teaching_load = pulp.lpSum([
-                self.course_streams.get((course, term), 0) * self.x_vars[(course, professor, term)]
-                for course in self.courses
-                for term in self.terms
-                if (course, professor, term) in self.x_vars  # Only for offered courses
-            ])
-            # b_j is total teaching load capacity for professor j (measured in stream units)
-            self.model += (
-                total_teaching_load <= self.professor_total_load[professor],
-                f"TotalLoad_b_{professor}"
-            )
+        # Constraint (3): Course Load Constraint (Total) - b_j limits (OPTIONAL)
+        # sum(x_ijk) <= b_j for all j (total courses across all terms)
+        if self.use_total_load_constraint and self.professor_total_load:
+            for professor in self.professors:
+                if professor in self.professor_total_load:
+                    total_courses_assigned = pulp.lpSum([
+                        self.x_vars[(course, professor, term)]
+                        for course in self.courses
+                        for term in self.terms
+                        if (course, professor, term) in self.x_vars  # Only for offered courses
+                    ])
+                    # b_j is total teaching load for professor j
+                    self.model += (
+                        total_courses_assigned <= self.professor_total_load[professor],
+                        f"TotalLoad_b_{professor}"
+                    )
         
         # Constraint (4): Course Offering Constraint - Each offered course gets exactly one academic
         # sum(x_ijk) = O_ik for all i, k where O_ik = 1
@@ -154,9 +158,9 @@ class CourseCoveringProblem:
         assignments = {}  # {(course, term): professor}
         professor_loads = {
             prof: {
-                'total_teaching_load': 0,  # Tracks b_j constraint (in stream units)
+                'total_courses': 0,  # Tracks b_j constraint
                 'streams_per_term': {term: 0 for term in self.terms},  # Tracks L_jk constraints
-                'courses_assigned': 0  # For reporting purposes
+                'total_streams': 0
             } 
             for prof in self.professors
         }
@@ -192,34 +196,34 @@ class CourseCoveringProblem:
         """Analyze potential constraint violations if problem is infeasible."""
         violations = []
         
-        # Check if total required teaching load (streams) exceed total available capacity
-        total_required_load = sum([
+        # Check if total required streams exceed total available capacity
+        total_required_streams = sum([
             self.course_streams.get((course, term), 1)
             for course in self.courses
             for term in self.terms
             if self.course_offerings.get((course, term), 0) == 1
         ])
         
-        total_available_load = sum(self.professor_total_load.values())
+        total_available_streams = sum([
+            self.professor_term_limits.get((prof, term), 0)
+            for prof in self.professors
+            for term in self.terms
+        ])
         
-        if total_required_load > total_available_load:
-            violations.append(f"Total required teaching load ({total_required_load} streams) exceeds total available capacity ({total_available_load} stream units)")
+        if total_required_streams > total_available_streams:
+            violations.append(f"Total required streams ({total_required_streams}) exceed total available capacity ({total_available_streams})")
         
-        # Check term-specific capacity (L_jk constraints)
-        for term in self.terms:
-            term_required_streams = sum([
-                self.course_streams.get((course, term), 1)
-                for course in self.courses
-                if self.course_offerings.get((course, term), 0) == 1
-            ])
-            
-            term_available_streams = sum([
-                self.professor_term_limits.get((prof, term), 0)
-                for prof in self.professors
-            ])
-            
-            if term_required_streams > term_available_streams:
-                violations.append(f"Term {term}: required streams ({term_required_streams}) exceed available capacity ({term_available_streams})")
+        # Check total course constraints
+        total_required_courses = sum([
+            1 for course in self.courses
+            for term in self.terms
+            if self.course_offerings.get((course, term), 0) == 1
+        ])
+        
+        total_available_courses = sum(self.professor_total_load.values())
+        
+        if total_required_courses > total_available_courses:
+            violations.append(f"Total required courses ({total_required_courses}) exceed total available slots ({total_available_courses})")
         
         return violations
 
@@ -622,15 +626,14 @@ def show_results_step():
         for professor in professors:
             prof_load = solution['professor_loads'][professor]
             
-            # b_j constraint check (teaching load in stream units)
-            total_load = prof_load['total_teaching_load']
-            max_total_load = professor_total_load[professor]
+            # b_j constraint check
+            total_courses = prof_load['total_courses']
+            max_total = professor_total_load[professor]
             
             workload_data.append({
                 'Professor': professor,
-                'Teaching Load (b_j)': f"{total_load}/{max_total_load} streams",
-                'Load Utilization %': f"{(total_load/max_total_load)*100:.1f}%" if max_total_load > 0 else "0%",
-                'Courses Assigned': prof_load['courses_assigned']
+                'Total Courses': f"{total_courses}/{max_total}",
+                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%"
             })
             
             # L_jk constraint check per term
@@ -641,9 +644,8 @@ def show_results_step():
                 
                 workload_data.append({
                     'Professor': f"  {term}",
-                    'Teaching Load (b_j)': f"{streams_in_term}/{max_streams} streams",
-                    'Load Utilization %': f"{utilization:.1f}%",
-                    'Courses Assigned': ""
+                    'Total Courses': f"{streams_in_term}/{max_streams} streams",
+                    'Total Utilization %': f"{utilization:.1f}%"
                 })
         
         workload_df = pd.DataFrame(workload_data)
