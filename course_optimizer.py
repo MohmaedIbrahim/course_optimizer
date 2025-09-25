@@ -687,6 +687,45 @@ def show_results_step():
                     height=min(600, max(300, len(courses) * 20)),  # Dynamic height
                     use_container_width=True
                 )
+                
+                # Create term-specific matrix
+                term_matrix = pd.DataFrame(index=courses, columns=professors)
+                term_matrix[:] = 0  # Explicit initialization
+                
+                # Fill in assignments for this specific term
+                for (course, assigned_term), professor in solution['assignments'].items():
+                    if assigned_term == term:
+                        term_matrix.loc[course, professor] = 1
+                
+                # Convert to integers for clean display
+                term_matrix = term_matrix.astype(int)
+                
+                # Term summary statistics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    courses_in_term = term_matrix.sum().sum()
+                    st.metric(f"Courses in {term}", courses_in_term)
+                with col2:
+                    active_professors = (term_matrix.sum(axis=0) > 0).sum()
+                    st.metric(f"Active Professors", active_professors)
+                with col3:
+                    total_streams_term = sum([course_streams.get((course, term), 0) 
+                                            for course in courses 
+                                            if (course, term) in solution['assignments']])
+                    st.metric(f"Total Streams", total_streams_term)
+                with col4:
+                    # Calculate average workload
+                    avg_courses_per_prof = courses_in_term / active_professors if active_professors > 0 else 0
+                    st.metric(f"Avg Load/Prof", f"{avg_courses_per_prof:.1f}")
+                
+                # Display term matrix with color coding
+                st.dataframe(
+                    term_matrix.style.applymap(
+                        lambda x: 'background-color: #90EE90' if x == 1 else 'background-color: #f0f0f0'
+                    ),
+                    height=min(600, max(300, len(courses) * 20)),  # Dynamic height
+                    use_container_width=True
+                )
         
         # Professor workload summary
         st.subheader("Professor Workload Summary")
@@ -1694,4 +1733,5 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
 
