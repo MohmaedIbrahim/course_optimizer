@@ -1109,18 +1109,149 @@ def show_excel_upload_step():
 4   ACTL3   1    2    2
             """)
     
+def create_excel_template_structured():
+    """Create template files for the required Excel structure."""
+    try:
+        import io
+        import zipfile
+        
+        # Create sample data for all 4 sheets
+        
+        # Sheet 1: c_ij (Course Preferences)
+        sheet1_data = """,,ACTL1,ACTL2,ACTL3,ACTL4
+,,Act1,Act2,Act3,Act4
+Jonathan,8,6,4,7
+JK,5,9,3,5
+Patrick,7,4,8,6
+Andres,6,7,5,8"""
+        
+        # Sheet 2: t_jk, L_jk, b_j (Professor Constraints)
+        sheet2_data = """Professor,T1_Pref,T2_Pref,T3_Pref,T1_Limit,T2_Limit,T3_Limit,Total_Load
+Jonathan,9,6,8,3,2,3,5
+JK,7,8,5,2,3,2,4
+Patrick,8,7,9,3,3,3,6
+Andres,6,9,7,2,2,3,5"""
+        
+        # Sheet 3: O_jk (Course Offerings)
+        sheet3_data = """Course,T1,T2,T3
+ACTL1,1,0,1
+ACTL2,0,1,0
+ACTL3,1,1,1
+ACTL4,1,0,1"""
+        
+        # Sheet 4: n_jk (Course Streams)
+        sheet4_data = """Course,T1,T2,T3
+ACTL1,2,0,1
+ACTL2,0,3,0
+ACTL3,1,2,2
+ACTL4,1,0,1"""
+        
+        # Create a zip file with all CSV templates
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr('1_c_ij_course_preferences.csv', sheet1_data)
+            zip_file.writestr('2_professor_constraints.csv', sheet2_data)
+            zip_file.writestr('3_O_jk_course_offerings.csv', sheet3_data)
+            zip_file.writestr('4_n_jk_course_streams.csv', sheet4_data)
+            
+            # Add instructions file
+            instructions = """Excel Template Instructions:
+
+Create an Excel file with 4 sheets using these CSV files as templates:
+
+Sheet 1: c_ij (Course Preferences)
+- Staff names in column A starting from A3
+- Course names in row 1 starting from B1
+- Course codes in row 2 starting from B2
+- Preference scores (0-10) in the data area
+
+Sheet 2: Professor Constraints
+- Column A: Professor names
+- Columns B-D: Term preferences (T1, T2, T3) - scale 0-10
+- Columns E-G: Term stream limits (T1, T2, T3) - max streams per term
+- Column H: Total teaching load (b_j) - total courses per professor
+
+Sheet 3: O_jk (Course Offerings)  
+- Column A: Course codes
+- Columns B-D: T1, T2, T3 with 1/0 values (1=offered, 0=not offered)
+
+Sheet 4: n_jk (Course Streams)
+- Column A: Course codes
+- Columns B-D: T1, T2, T3 with stream counts (integers)
+
+You can import these CSV files into separate sheets in Excel, or copy-paste the data following the structure shown."""
+            
+            zip_file.writestr('README_Instructions.txt', instructions)
+        
+        zip_buffer.seek(0)
+        return zip_buffer.getvalue()
+        
+    except Exception:
+        return None
+
+
     # Download template button
     if st.button("Download Excel Template"):
         template_data = create_excel_template_structured()
         if template_data:
             st.download_button(
-                label="Download Template File",
+                label="Download Template Files (ZIP)",
                 data=template_data,
-                file_name="course_optimizer_template.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                file_name="course_optimizer_template.zip",
+                mime="application/zip",
+                help="Contains CSV files for each sheet and instructions"
             )
         else:
-            st.error("Excel template generation requires additional libraries. Please create manually using the format above.")
+            # Provide manual template creation guide
+            st.subheader("Manual Template Creation Guide")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**Sheet 1: c_ij (Course Preferences)**")
+                st.code("""
+    A        B      C      D      E
+1           ACTL1  ACTL2  ACTL3  ACTL4
+2           Act1   Act2   Act3   Act4
+3  Jonathan   8      6      4      7
+4  JK         5      9      3      5
+5  Patrick    7      4      8      6
+6  Andres     6      7      5      8
+                """)
+                
+                st.write("**Sheet 3: O_jk (Course Offerings)**")
+                st.code("""
+    A       B   C   D
+1  Course  T1  T2  T3
+2  ACTL1   1   0   1
+3  ACTL2   0   1   0
+4  ACTL3   1   1   1
+5  ACTL4   1   0   1
+                """)
+            
+            with col2:
+                st.write("**Sheet 2: Professor Constraints**")
+                st.code("""
+    A        B  C  D  E  F  G  H
+1  Prof    T1 T2 T3 T1 T2 T3 Total
+2         (Preferences)(Limits)Load
+3  Jonathan 9  6  8  3  2  3   5
+4  JK       7  8  5  2  3  2   4
+5  Patrick  8  7  9  3  3  3   6
+                """)
+                
+                st.write("**Sheet 4: n_jk (Course Streams)**")
+                st.code("""
+    A       B   C   D
+1  Course  T1  T2  T3
+2  ACTL1   2   0   1
+3  ACTL2   0   3   0
+4  ACTL3   1   2   2
+5  ACTL4   1   0   1
+                """)
+            
+            st.info("Copy these templates into a new Excel file with 4 sheets named accordingly.")
     
     # File upload
     uploaded_file = st.file_uploader(
