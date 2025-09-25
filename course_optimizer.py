@@ -252,7 +252,12 @@ def main():
         st.session_state.terms = ['T1', 'T2', 'T3']
     
     # Navigation based on input method
-    if input_method == "Manual Input":
+    if input_method == "Excel Upload":
+        if st.session_state.step == 1:
+            show_excel_upload_step()
+        elif st.session_state.step == 2:
+            show_results_step()
+    else:  # Manual Input
         if st.session_state.step == 1:
             show_setup_step()
         elif st.session_state.step == 2:
@@ -261,9 +266,6 @@ def main():
             show_preferences_step()
         elif st.session_state.step == 4:
             show_results_step()
-    else:  # Excel Upload
-        st.info("Excel upload functionality can be added - using manual input for now")
-        show_setup_step()
 
 
 def show_setup_step():
@@ -650,5 +652,319 @@ def show_results_step():
             st.rerun()
 
 
-if __name__ == "__main__":
-    main()
+def show_excel_upload_step():
+    """Show Excel upload interface with specific sheet structure."""
+    st.header("Excel File Upload")
+    
+    # Show required Excel format
+    st.subheader("Required Excel File Format")
+    st.markdown("""
+    Your Excel file must contain exactly 4 sheets with this structure:
+    
+    **Sheet 1: c_ij (Course Preferences)**
+    - Staff names in column A starting from A3
+    - Course names in row 1 starting from B1
+    - Course codes in row 2 starting from B2
+    - Preference scores (0-10) in the data area
+    
+    **Sheet 2: t_jk, L_jk, b_j (Professor Constraints)**
+    - Staff names in column A starting from A3
+    - t_jk (Term Preferences): 3 columns for T1, T2, T3 (0-10 scale)
+    - L_jk (Term Max Load): 3 columns for T1, T2, T3 (max streams per term)
+    - b_j (Total Teaching Load): 1 column for total courses
+    
+    **Sheet 3: O_jk (Course Offerings)**
+    - Course codes in column A
+    - T1, T2, T3 columns with 1/0 values (1 = offered, 0 = not offered)
+    
+    **Sheet 4: n_jk (Course Streams)**
+    - Course codes in column A  
+    - T1, T2, T3 columns with stream counts (number of streams per course per term)
+    """)
+    
+    # Show sample format
+    with st.expander("Click to see sample Excel format"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Sheet 1 - c_ij (Course Preferences):**")
+            st.code("""
+    A       B       C       D
+1           ACTL1   ACTL2   ACTL3
+2           Act1    Act2    Act3  
+3   Jonathan  8       5       3
+4   JK        6       9       4
+5   Patrick   4       7       8
+            """)
+            
+            st.write("**Sheet 2 - Professor Constraints:**")
+            st.code("""
+    A        B    C    D    E    F    G    H
+1           T1   T2   T3   T1   T2   T3   Total
+2           (Term Prefs) (Max Streams) Load
+3   Jonathan  9    5    7    3    2    3    5
+4   JK        6    8    4    2    3    2    4
+5   Patrick   7    6    9    3    3    3    6
+            """)
+        
+        with col2:
+            st.write("**Sheet 3 - O_jk (Course Offerings):**")
+            st.code("""
+    A       B    C    D
+1   Course  T1   T2   T3
+2   ACTL1   1    0    1
+3   ACTL2   0    1    0
+4   ACTL3   1    1    1
+            """)
+            
+            st.write("**Sheet 4 - n_jk (Course Streams):**")
+            st.code("""
+    A       B    C    D
+1   Course  T1   T2   T3
+2   ACTL1   2    0    1
+3   ACTL2   0    3    0
+4   ACTL3   1    2    2
+            """)
+    
+    # Download template button
+    if st.button("Download Excel Template"):
+        template_data = create_excel_template_structured()
+        if template_data:
+            st.download_button(
+                label="Download Template File",
+                data=template_data,
+                file_name="course_optimizer_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.error("Excel template generation requires additional libraries. Please create manually using the format above.")
+    
+    # File upload
+    uploaded_file = st.file_uploader(
+        "Upload your Excel file:",
+        type=['xlsx', 'xls'],
+        help="Upload an Excel file with the 4 required sheets"
+    )
+    
+    if uploaded_file is not None:
+        try:
+            # Read Excel file
+            with st.spinner("Reading Excel file..."):
+                excel_data = pd.ExcelFile(uploaded_file)
+                
+                # Validate required sheets
+                required_sheets = ['c_ij', 't_jk_L_jk_b_j', 'O_jk', 'n_jk']
+                available_sheets = excel_data.sheet_names
+                
+                st.write("Available sheets:", available_sheets)
+                
+                # Use flexible sheet name matching
+                sheet_mapping = {}
+                for req_sheet in required_sheets:
+                    matched = False
+                    for avail_sheet in available_sheets:
+                        if req_sheet.lower() in avail_sheet.lower() or avail_sheet.lower() in req_sheet.lower():
+                            sheet_mapping[req_sheet] = avail_sheet
+                            matched = True
+                            break
+                    if not matched:
+                        # Try to map by position
+                        if req_sheet == 'c_ij' and len(available_sheets) > 0:
+                            sheet_mapping[req_sheet] = available_sheets[0]
+                        elif req_sheet == 't_jk_L_jk_b_j' and len(available_sheets) > 1:
+                            sheet_mapping[req_sheet] = available_sheets[1]
+                        elif req_sheet == 'O_jk' and len(available_sheets) > 2:
+                            sheet_mapping[req_sheet] = available_sheets[2]
+                        elif req_sheet == 'n_jk' and len(available_sheets) > 3:
+                            sheet_mapping[req_sheet] = available_sheets[3]
+                
+                st.write("Sheet mapping:", sheet_mapping)
+                
+                if len(sheet_mapping) != 4:
+                    st.error(f"Could not find all required sheets. Found: {list(sheet_mapping.values())}")
+                    return
+                
+                # Read all sheets
+                sheet1 = pd.read_excel(uploaded_file, sheet_name=sheet_mapping['c_ij'], header=None)
+                sheet2 = pd.read_excel(uploaded_file, sheet_name=sheet_mapping['t_jk_L_jk_b_j'])
+                sheet3 = pd.read_excel(uploaded_file, sheet_name=sheet_mapping['O_jk'])
+                sheet4 = pd.read_excel(uploaded_file, sheet_name=sheet_mapping['n_jk'])
+                
+                # Process Sheet 1: c_ij (Course Preferences)
+                st.subheader("Processing Course Preferences (c_ij)")
+                
+                # Extract course names from B1 onwards and course codes from B2 onwards
+                course_names = []
+                course_codes = []
+                for col_idx in range(1, len(sheet1.columns)):
+                    if pd.notna(sheet1.iloc[0, col_idx]):  # Row 1 (0-indexed)
+                        course_names.append(str(sheet1.iloc[0, col_idx]).strip())
+                    if pd.notna(sheet1.iloc[1, col_idx]):  # Row 2 (0-indexed)  
+                        course_codes.append(str(sheet1.iloc[1, col_idx]).strip())
+                
+                # Extract staff names from A3 onwards
+                staff_names = []
+                for row_idx in range(2, len(sheet1)):  # Starting from row 3 (0-indexed = 2)
+                    if pd.notna(sheet1.iloc[row_idx, 0]):
+                        staff_names.append(str(sheet1.iloc[row_idx, 0]).strip())
+                
+                # Extract course preferences
+                course_preferences = {}
+                for staff_idx, staff in enumerate(staff_names):
+                    for course_idx, course in enumerate(course_codes):
+                        if course_idx < len(course_codes):
+                            row_idx = staff_idx + 2  # Start from row 3
+                            col_idx = course_idx + 1  # Start from column B
+                            if row_idx < len(sheet1) and col_idx < len(sheet1.columns):
+                                pref_val = sheet1.iloc[row_idx, col_idx]
+                                if pd.notna(pref_val):
+                                    course_preferences[(course, staff)] = float(pref_val)
+                                else:
+                                    course_preferences[(course, staff)] = 0.0
+                
+                st.success(f"Found {len(staff_names)} staff and {len(course_codes)} courses")
+                st.write("Staff:", staff_names)
+                st.write("Courses:", course_codes)
+                
+                # Process Sheet 2: t_jk, L_jk, b_j
+                st.subheader("Processing Professor Constraints")
+                
+                terms = ['T1', 'T2', 'T3']
+                term_preferences = {}
+                professor_term_limits = {}
+                professor_total_load = {}
+                
+                # Assuming columns are: Staff, T1_pref, T2_pref, T3_pref, T1_limit, T2_limit, T3_limit, Total_load
+                for idx, row in sheet2.iterrows():
+                    if pd.notna(row.iloc[0]):  # Staff name exists
+                        staff = str(row.iloc[0]).strip()
+                        
+                        # Term preferences (columns 1-3)
+                        for i, term in enumerate(terms):
+                            if len(row) > i + 1 and pd.notna(row.iloc[i + 1]):
+                                term_preferences[(staff, term)] = float(row.iloc[i + 1])
+                            else:
+                                term_preferences[(staff, term)] = 5.0  # Default neutral
+                        
+                        # Term limits (columns 4-6)
+                        for i, term in enumerate(terms):
+                            if len(row) > i + 4 and pd.notna(row.iloc[i + 4]):
+                                professor_term_limits[(staff, term)] = int(row.iloc[i + 4])
+                            else:
+                                professor_term_limits[(staff, term)] = 2  # Default limit
+                        
+                        # Total load (column 7)
+                        if len(row) > 7 and pd.notna(row.iloc[7]):
+                            professor_total_load[staff] = int(row.iloc[7])
+                        else:
+                            professor_total_load[staff] = 4  # Default total load
+                
+                # Process Sheet 3: O_jk (Course Offerings)
+                st.subheader("Processing Course Offerings")
+                
+                course_offerings = {}
+                for idx, row in sheet3.iterrows():
+                    if pd.notna(row.iloc[0]):  # Course code exists
+                        course = str(row.iloc[0]).strip()
+                        for i, term in enumerate(terms):
+                            if len(row) > i + 1 and pd.notna(row.iloc[i + 1]):
+                                course_offerings[(course, term)] = int(row.iloc[i + 1])
+                            else:
+                                course_offerings[(course, term)] = 0
+                
+                # Process Sheet 4: n_jk (Course Streams)  
+                st.subheader("Processing Course Streams")
+                
+                course_streams = {}
+                for idx, row in sheet4.iterrows():
+                    if pd.notna(row.iloc[0]):  # Course code exists
+                        course = str(row.iloc[0]).strip()
+                        for i, term in enumerate(terms):
+                            if len(row) > i + 1 and pd.notna(row.iloc[i + 1]):
+                                course_streams[(course, term)] = int(row.iloc[i + 1])
+                            else:
+                                course_streams[(course, term)] = 0
+                
+                # Store in session state
+                st.session_state.courses = course_codes
+                st.session_state.professors = staff_names
+                st.session_state.terms = terms
+                st.session_state.course_preferences = course_preferences
+                st.session_state.term_preferences = term_preferences
+                st.session_state.professor_term_limits = professor_term_limits
+                st.session_state.professor_total_load = professor_total_load
+                st.session_state.course_offerings = course_offerings
+                st.session_state.course_streams = course_streams
+                
+                st.success("Excel file loaded successfully!")
+                
+                # Show summary
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Courses", len(course_codes))
+                with col2:
+                    st.metric("Professors", len(staff_names))
+                with col3:
+                    offerings_count = sum(course_offerings.values())
+                    st.metric("Course Offerings", offerings_count)
+                
+                # Show loaded data preview
+                st.subheader("Data Preview")
+                
+                # Course preferences preview
+                with st.expander("Course Preferences (c_ij)"):
+                    if course_preferences:
+                        pref_matrix = pd.DataFrame(index=course_codes, columns=staff_names)
+                        for course in course_codes:
+                            for staff in staff_names:
+                                pref_matrix.loc[course, staff] = course_preferences.get((course, staff), 0)
+                        st.dataframe(pref_matrix)
+                
+                # Professor constraints preview
+                with st.expander("Professor Constraints"):
+                    constraints_data = []
+                    for staff in staff_names:
+                        row_data = {'Professor': staff, 'Total Load (b_j)': professor_total_load.get(staff, 0)}
+                        for term in terms:
+                            row_data[f'{term} Pref (t_jk)'] = term_preferences.get((staff, term), 0)
+                            row_data[f'{term} Limit (L_jk)'] = professor_term_limits.get((staff, term), 0)
+                        constraints_data.append(row_data)
+                    
+                    constraints_df = pd.DataFrame(constraints_data)
+                    st.dataframe(constraints_df)
+                
+                # Course offerings and streams preview
+                with st.expander("Course Offerings & Streams"):
+                    offerings_data = []
+                    for course in course_codes:
+                        row_data = {'Course': course}
+                        for term in terms:
+                            offering = course_offerings.get((course, term), 0)
+                            streams = course_streams.get((course, term), 0)
+                            if offering == 1:
+                                row_data[term] = f"✓ ({streams} streams)"
+                            else:
+                                row_data[term] = "✗"
+                        offerings_data.append(row_data)
+                    
+                    offerings_df = pd.DataFrame(offerings_data)
+                    st.dataframe(offerings_df)
+                
+                # Run optimization button
+                if st.button("Run Optimization", type="primary"):
+                    st.session_state.step = 2
+                    st.rerun()
+                    
+        except Exception as e:
+            st.error(f"Error reading Excel file: {str(e)}")
+            st.write("Please check that your file format matches the required template.")
+            
+            # Show the actual error for debugging
+            st.code(str(e))
+
+
+def create_excel_template_structured():
+    """Create an Excel template file with the specified structure."""
+    # This would require xlsxwriter or openpyxl
+    # For now, return None to indicate manual creation needed
+    return None
