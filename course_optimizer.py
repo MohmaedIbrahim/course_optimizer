@@ -325,13 +325,13 @@ def show_results_step_fixed():
         
         # 1. MAIN MATRIX - ALL TERMS COMBINED
         st.subheader("📊 Assignment Matrix - All Terms Combined")
-        st.markdown("**Courses (rows) × Staff (columns) | Shows: 1-TermCode or 0 for no assignment**")
+        st.markdown("**Courses (rows) × Staff (columns) | Shows: Term code (T1/T2/T3) or 0 for no assignment**")
         
         # Create matrix with proper structure
         matrix_all_terms = pd.DataFrame(
             index=courses,     # Course names as row index
             columns=professors, # Professor names as column headers
-            dtype=object  # Changed to object to store strings like "1-T1"
+            dtype=object  # Changed to object to store strings like "T1"
         )
         # Initialize with zeros
         matrix_all_terms[:] = 0
@@ -340,7 +340,7 @@ def show_results_step_fixed():
         if solution.get('assignments'):
             for (course, term), professor in solution['assignments'].items():
                 if course in matrix_all_terms.index and professor in matrix_all_terms.columns:
-                    matrix_all_terms.loc[course, professor] = f"1-{term}"
+                    matrix_all_terms.loc[course, professor] = term
         
         # Display matrix
         st.dataframe(
