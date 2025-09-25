@@ -1569,54 +1569,48 @@ def show_data_analysis_step():
         pref_range = f"{course_pref_matrix.min().min():.0f} - {course_pref_matrix.max().max():.0f}"
         st.metric("Preference Range", pref_range)
     
-    # Analysis: Courses with multiple professors scoring 10 or 8
+    # Analysis: Courses with multiple professors having the same scores
     st.subheader("Course Preference Analysis")
     
-    # Find courses with multiple professors giving score 10
-    courses_with_multiple_10s = []
+    # Find all unique scores in the data (excluding 0)
+    all_scores = set()
     for course in courses:
-        profs_with_10 = []
         for prof in professors:
             score = course_pref_matrix.loc[course, prof]
-            if score == 10:
-                profs_with_10.append(prof)
+            if score > 0:  # Only consider positive scores
+                all_scores.add(score)
+    
+    # Sort scores in descending order for better display
+    sorted_scores = sorted(all_scores, reverse=True)
+    
+    # For each score, find courses with multiple professors having that score
+    for score in sorted_scores:
+        courses_with_multiple_score = []
+        for course in courses:
+            profs_with_score = []
+            for prof in professors:
+                prof_score = course_pref_matrix.loc[course, prof]
+                if prof_score == score:
+                    profs_with_score.append(prof)
+            
+            if len(profs_with_score) > 1:  # Only courses with multiple professors having this score
+                courses_with_multiple_score.append({
+                    'Course': course,
+                    f'Professors with Score {score}': ', '.join(profs_with_score),
+                    'Count': len(profs_with_score)
+                })
         
-        if len(profs_with_10) > 1:  # Only courses with multiple 10s
-            courses_with_multiple_10s.append({
-                'Course': course,
-                'Professors with Score 10': ', '.join(profs_with_10),
-                'Count': len(profs_with_10)
-            })
+        # Display table only if there are courses with multiple professors having this score
+        if courses_with_multiple_score:
+            st.write(f"**Courses with Multiple Professors Scoring {score}:**")
+            multiple_score_df = pd.DataFrame(courses_with_multiple_score)
+            st.dataframe(multiple_score_df, hide_index=True)
+            st.markdown("")  # Add some spacing between tables
     
-    if courses_with_multiple_10s:
-        st.write("**Courses with Multiple Professors Scoring 10:**")
-        multiple_10s_df = pd.DataFrame(courses_with_multiple_10s)
-        st.dataframe(multiple_10s_df, hide_index=True)
-    else:
-        st.info("No courses have multiple professors with score 10")
-    
-    # Find courses with multiple professors giving score 8
-    courses_with_multiple_8s = []
-    for course in courses:
-        profs_with_8 = []
-        for prof in professors:
-            score = course_pref_matrix.loc[course, prof]
-            if score == 8:
-                profs_with_8.append(prof)
-        
-        if len(profs_with_8) > 1:  # Only courses with multiple 8s
-            courses_with_multiple_8s.append({
-                'Course': course,
-                'Professors with Score 8': ', '.join(profs_with_8),
-                'Count': len(profs_with_8)
-            })
-    
-    if courses_with_multiple_8s:
-        st.write("**Courses with Multiple Professors Scoring 8:**")
-        multiple_8s_df = pd.DataFrame(courses_with_multiple_8s)
-        st.dataframe(multiple_8s_df, hide_index=True)
-    else:
-        st.info("No courses have multiple professors with score 8")
+    # If no duplicate scores found at all
+    if not any(len([prof for prof in professors if course_pref_matrix.loc[course, prof] == score]) > 1 
+              for score in sorted_scores for course in courses):
+        st.info("No courses have multiple professors with the same score")
     
     # Term Preferences Heatmap (t_jk)
     st.subheader("Term Preferences Heatmap (t_jk)")
