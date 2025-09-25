@@ -1,120 +1,122 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import pulp
-import numpy as np
-from typing import Dict, List, Tuple
-import io
-
 class CourseCoveringProblem:
-    """Course covering optimization problem solver with terms and class-based constraints."""
+    """Course covering optimization problem solver matching exact mathematical formulation."""
     
     def __init__(self, courses: List[str], professors: List[str], terms: List[str],
-                 course_preferences: Dict[Tuple[str, str], float],
-                 term_preferences: Dict[Tuple[str, str], float],
-                 course_classes: Dict[str, int],
-                 professor_max_courses: Dict[str, int],  # b_j: individual limits per professor
-                 course_allowed_terms: Dict[str, List[str]],  # Which terms each course can be offered
-                 max_classes_per_term: int = 3):
+                 course_preferences: Dict[Tuple[str, str], float],  # c_ij (0-10 scale)
+                 term_preferences: Dict[Tuple[str, str], float],    # t_jk (0-10 scale)
+                 course_streams: Dict[Tuple[str, str], int],        # n_ik: streams per course per term
+                 professor_total_load: Dict[str, int],              # b_j: total courses per professor
+                 professor_term_limits: Dict[Tuple[str, str], int], # L_jk: max streams per prof per term (independent from b_j)
+                 course_offerings: Dict[Tuple[str, str], int]):     # O_ik: 1 if course offered in term
         
-        self.courses = courses
-        self.professors = professors
-        self.terms = terms
-        self.course_preferences = course_preferences
-        self.term_preferences = term_preferences
-        self.course_classes = course_classes  # n_i: classes per course
-        self.professor_max_courses = professor_max_courses  # b_j: individual limits per professor
-        self.course_allowed_terms = course_allowed_terms  # Which terms each course can be offered
-        self.max_classes_term = max_classes_per_term  # L = 3
+        self.courses = courses  # S
+        self.professors = professors  # P
+        self.terms = terms  # T
+        self.course_preferences = course_preferences  # c_ij (0-10, higher is better)
+        self.term_preferences = term_preferences  # t_jk (0-10, higher is better)
+        self.course_streams = course_streams  # n_ik
+        self.professor_total_load = professor_total_load  # b_j (total teaching load)
+        self.professor_term_limits = professor_term_limits  # L_jk (independent from b_j)
+        self.course_offerings = course_offerings  # O_ik (parameter, not variable)
         
         self.model = None
         self.x_vars = {}  # x_ijk
-        self.o_vars = {}  # O_ik
         
+        # Validate preference scores are in correct range
+        self._validate_preferences()
+        
+    def _validate_preferences(self):
+        """Validate that preference scores are in 0-10 range."""
+        for (course, prof), score in self.course_preferences.items():
+            if not (0 <= score <= 10):
+                raise ValueError(f"Course preference c_{{{course},{prof}}} = {score} must be in range [0,10]")
+        
+        for (prof, term), score in self.term_preferences.items():
+            if not (0 <= score <= 10):
+                raise ValueError(f"Term preference t_{{{prof},{term}}} = {score} must be in range [0,10]")
+    
     def build_model(self):
-        """Build the optimization model."""
-        self.model = pulp.LpProblem("Course_Covering_Multi_Term", pulp.LpMaximize)
+        """Build the optimization model matching the mathematical formulation exactly."""
+        self.model = pulp.LpProblem("Course_Covering_Mathematical", pulp.LpMaximize)
         
-        # Decision variables
-        # x_ijk: 1 if professor j teaches course i in term k (only for allowed terms)
+        # Decision variables: x_ijk (only where course is offered)
         self.x_vars = {}
         for course in self.courses:
             for professor in self.professors:
-                for term in self.course_allowed_terms[course]:  # Only allowed terms
-                    self.x_vars[(course, professor, term)] = pulp.LpVariable(
-                        f"x_{course}_{professor}_{term}", cat='Binary'
-                    )
+                for term in self.terms:
+                    # Only create variables where course is actually offered (O_ik = 1)
+                    if self.course_offerings.get((course, term), 0) == 1:
+                        self.x_vars[(course, professor, term)] = pulp.LpVariable(
+                            f"x_{course}_{professor}_{term}", cat='Binary'
+                        )
         
-        # O_ik: 1 if course i is offered in term k (only for allowed terms)
-        self.o_vars = {}
-        for course in self.courses:
-            for term in self.course_allowed_terms[course]:  # Only allowed terms
-                self.o_vars[(course, term)] = pulp.LpVariable(
-                    f"O_{course}_{term}", cat='Binary'
-                )
-        
-        # Objective function: maximize course preferences + term preferences (only for allowed terms)
+        # Objective function: Equation (1) - Maximize c_ij + t_jk preferences
         course_pref_term = pulp.lpSum([
             self.course_preferences.get((course, professor), 0) * self.x_vars[(course, professor, term)]
             for course in self.courses
             for professor in self.professors
-            for term in self.course_allowed_terms[course]  # Only allowed terms
+            for term in self.terms
+            if (course, professor, term) in self.x_vars  # Only for offered courses
         ])
         
         term_pref_term = pulp.lpSum([
             self.term_preferences.get((professor, term), 0) * self.x_vars[(course, professor, term)]
             for course in self.courses
             for professor in self.professors
-            for term in self.course_allowed_terms[course]  # Only allowed terms
+            for term in self.terms
+            if (course, professor, term) in self.x_vars  # Only for offered courses
         ])
         
         self.model += course_pref_term + term_pref_term
         self._add_constraints()
         
     def _add_constraints(self):
-        """Add all constraints to the model."""
+        """Add all constraints matching the mathematical formulation exactly."""
         
-        # 1. One professor per course per term (only for allowed terms)
-        for course in self.courses:
-            for term in self.course_allowed_terms[course]:  # Only allowed terms
-                self.model += (
-                    pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) <= 1,
-                    f"SingleProf_{course}_{term}"
-                )
-        
-        # 2. Faculty teaching load constraint (per term) - class-based
+        # Constraint (2): Stream Load Constraint (Per Term) - L_jk limits
+        # sum(n_ik * x_ijk) <= L_jk for all j, k
         for professor in self.professors:
-            for term in self.terms:  # Check all terms for professor workload
-                term_load = pulp.lpSum([
-                    self.course_classes[course] * self.x_vars[(course, professor, term)]
+            for term in self.terms:
+                term_stream_load = pulp.lpSum([
+                    self.course_streams.get((course, term), 0) * self.x_vars[(course, professor, term)]
                     for course in self.courses
-                    if term in self.course_allowed_terms[course]  # Only if course allowed in this term
+                    if (course, professor, term) in self.x_vars  # Only for offered courses
                 ])
+                # L_jk is independent constraint - professor j's limit in term k
+                max_streams_in_term = self.professor_term_limits.get((professor, term), 0)
                 self.model += (
-                    term_load <= self.max_classes_term,
-                    f"ClassLoad_{professor}_{term}"
+                    term_stream_load <= max_streams_in_term,
+                    f"StreamLoad_L_{professor}_{term}"
                 )
         
-        # 3. Faculty teaching load constraint (total courses) - individual limits
+        # Constraint (3): Course Load Constraint (Total) - b_j limits  
+        # sum(x_ijk) <= b_j for all j (total courses across all terms)
         for professor in self.professors:
-            total_courses = pulp.lpSum([
+            total_courses_assigned = pulp.lpSum([
                 self.x_vars[(course, professor, term)]
                 for course in self.courses
-                for term in self.course_allowed_terms[course]  # Only allowed terms
+                for term in self.terms
+                if (course, professor, term) in self.x_vars  # Only for offered courses
             ])
+            # b_j is total teaching load for professor j (independent from L_jk)
             self.model += (
-                total_courses <= self.professor_max_courses[professor],  # Use individual limit b_j
-                f"TotalCourses_{professor}"
+                total_courses_assigned <= self.professor_total_load[professor],
+                f"TotalLoad_b_{professor}"
             )
         
-        # 4. Course offering constraint: sum of x_ijk <= O_ik (only for allowed terms)
+        # Constraint (4): Course Offering Constraint - Each offered course gets exactly one academic
+        # sum(x_ijk) = O_ik for all i, k where O_ik = 1
         for course in self.courses:
-            for term in self.course_allowed_terms[course]:  # Only allowed terms
-                self.model += (
-                    pulp.lpSum([self.x_vars[(course, professor, term)] for professor in self.professors]) <= self.o_vars[(course, term)],
-                    f"Offering_{course}_{term}"
-                )
+            for term in self.terms:
+                if self.course_offerings.get((course, term), 0) == 1:  # Only if course is offered (O_ik = 1)
+                    self.model += (
+                        pulp.lpSum([
+                            self.x_vars[(course, professor, term)]
+                            for professor in self.professors
+                            if (course, professor, term) in self.x_vars
+                        ]) == 1,  # Exactly one professor must be assigned
+                        f"CourseOffering_O_{course}_{term}"
+                    )
     
     def solve(self):
         """Solve the optimization problem."""
@@ -133,874 +135,113 @@ class CourseCoveringProblem:
                 'status': status,
                 'objective_value': None,
                 'assignments': {},
-                'course_offerings': {},
-                'uncovered_courses': list(self.courses),
-                'professor_loads': {}
+                'professor_loads': {},
+                'unassigned_offerings': [],
+                'constraint_violations': self._analyze_infeasibility() if status == 'Infeasible' else None
             }
     
     def _extract_solution(self):
         """Extract solution from solved model."""
         assignments = {}  # {(course, term): professor}
-        course_offerings = {}  # {course: [terms]}
-        professor_loads = {prof: {'courses': 0, 'classes_per_term': {term: 0 for term in self.terms}} for prof in self.professors}
+        professor_loads = {
+            prof: {
+                'total_courses': 0,  # Tracks b_j constraint
+                'streams_per_term': {term: 0 for term in self.terms},  # Tracks L_jk constraints
+                'total_streams': 0
+            } 
+            for prof in self.professors
+        }
+        unassigned_offerings = []
         
-        # Extract assignments (only for allowed terms)
+        # Extract assignments
         for course in self.courses:
-            for term in self.course_allowed_terms[course]:  # Only allowed terms
-                for professor in self.professors:
-                    if self.x_vars[(course, professor, term)].varValue == 1:
-                        assignments[(course, term)] = professor
-                        professor_loads[professor]['courses'] += 1
-                        professor_loads[professor]['classes_per_term'][term] += self.course_classes[course]
-        
-        # Extract course offerings (only for allowed terms)
-        for course in self.courses:
-            offered_terms = []
-            for term in self.course_allowed_terms[course]:  # Only allowed terms
-                if self.o_vars[(course, term)].varValue == 1:
-                    offered_terms.append(term)
-            if offered_terms:
-                course_offerings[course] = offered_terms
-        
-        # Find uncovered courses (courses not offered in any allowed term)
-        uncovered_courses = [course for course in self.courses if course not in course_offerings]
+            for term in self.terms:
+                if self.course_offerings.get((course, term), 0) == 1:  # Course should be offered
+                    assigned = False
+                    for professor in self.professors:
+                        if (course, professor, term) in self.x_vars and self.x_vars[(course, professor, term)].varValue == 1:
+                            assignments[(course, term)] = professor
+                            professor_loads[professor]['total_courses'] += 1  # Count for b_j
+                            streams_count = self.course_streams.get((course, term), 1)
+                            professor_loads[professor]['streams_per_term'][term] += streams_count  # Count for L_jk
+                            professor_loads[professor]['total_streams'] += streams_count
+                            assigned = True
+                            break
+                    
+                    if not assigned:
+                        unassigned_offerings.append((course, term))
         
         return {
             'status': 'Optimal',
             'objective_value': pulp.value(self.model.objective),
             'assignments': assignments,
-            'course_offerings': course_offerings,
-            'uncovered_courses': uncovered_courses,
-            'professor_loads': professor_loads
+            'professor_loads': professor_loads,
+            'unassigned_offerings': unassigned_offerings
         }
-
-
-def main():
-    st.set_page_config(
-        page_title="Course Covering Optimizer - Multi Term",
-        page_icon="🎓",
-        layout="wide"
-    )
     
-    st.title("🎓 Course Covering Optimizer - Multi Term")
-    st.markdown("Optimize faculty assignments across terms based on course and term preferences")
-    st.markdown("---")
-    
-    # Input method selection
-    input_method = st.sidebar.selectbox(
-        "Choose Input Method:",
-        ["Manual Input", "Excel Upload"]
-    )
-    
-    # Initialize session state
-    if 'step' not in st.session_state:
-        st.session_state.step = 1
-    if 'input_method' not in st.session_state:
-        st.session_state.input_method = input_method
-    if 'courses' not in st.session_state:
-        st.session_state.courses = []
-    if 'professors' not in st.session_state:
-        st.session_state.professors = []
-    if 'terms' not in st.session_state:
-        st.session_state.terms = []
-    if 'course_preferences' not in st.session_state:
-        st.session_state.course_preferences = {}
-    if 'term_preferences' not in st.session_state:
-        st.session_state.term_preferences = {}
-    if 'course_classes' not in st.session_state:
-        st.session_state.course_classes = {}
-    if 'professor_max_courses' not in st.session_state:
-        st.session_state.professor_max_courses = {}
-    if 'course_allowed_terms' not in st.session_state:
-        st.session_state.course_allowed_terms = {}
-    
-    # Update input method if changed
-    if st.session_state.input_method != input_method:
-        st.session_state.input_method = input_method
-        st.session_state.step = 1  # Reset to step 1 when method changes
-    
-    # Navigation based on input method
-    if input_method == "Excel Upload":
-        if st.session_state.step == 1:
-            show_excel_upload_step()
-        elif st.session_state.step == 2:
-            show_results_step()
-    else:  # Manual Input
-        if st.session_state.step == 1:
-            show_setup_step()
-        elif st.session_state.step == 2:
-            show_preferences_step()
-        elif st.session_state.step == 3:
-            show_results_step()
-
-
-def show_excel_upload_step():
-    """Show Excel upload interface."""
-    st.header("Excel File Upload")
-    
-    # Show required Excel format
-    st.subheader("Required Excel File Format")
-    st.markdown("""
-    Your Excel file should contain the following sheets:
-    1. **Courses** - Course configuration (Course name and number of classes)
-    2. **Professors** - Professor configuration (Professor name and max classes per term)
-    3. **CoursePreferences** - Course preference matrix
-    4. **TermPreferences** - Term preference matrix (uses T1, T2, T3)
-    5. **CourseTerms** - Which terms each course can be offered
-    """)
-    
-    # Show sample format
-    with st.expander("Click to see sample Excel format"):
-        col1, col2 = st.columns(2)
+    def _analyze_infeasibility(self):
+        """Analyze potential constraint violations if problem is infeasible."""
+        violations = []
         
-        with col1:
-            st.write("**Courses Sheet:**")
-            courses_sample = pd.DataFrame({
-                'Course': ['ACTL1', 'ACTL2', 'ACTL3'],
-                'Classes': [2, 3, 1]
-            })
-            st.dataframe(courses_sample, hide_index=True)
-            
-            st.write("**Professors Sheet:**")
-            profs_sample = pd.DataFrame({
-                'Professor': ['Jonathan', 'JK', 'Patrick'],
-                'MaxClasses': [3, 3, 3]  # Max classes per term
-            })
-            st.dataframe(profs_sample, hide_index=True)
+        # Check if total required streams exceed total available capacity
+        total_required_streams = sum([
+            self.course_streams.get((course, term), 1)
+            for course in self.courses
+            for term in self.terms
+            if self.course_offerings.get((course, term), 0) == 1
+        ])
         
-        with col2:
-            st.write("**CoursePreferences Sheet:**")
-            course_pref_sample = pd.DataFrame({
-                'Course': ['ACTL1', 'ACTL1', 'ACTL2'],
-                'Professor': ['Jonathan', 'JK', 'Jonathan'],
-                'Preference': [2, 1, 0]  # Updated to use 0,1,2 scale
-            })
-            st.dataframe(course_pref_sample, hide_index=True)
-            
-            st.write("**TermPreferences Sheet:**")
-            term_pref_sample = pd.DataFrame({
-                'Professor': ['Jonathan', 'Jonathan', 'JK'],
-                'Term': ['T1', 'T2', 'T1'],
-                'Preference': [2, 1, 1]  # Updated to use 0,1,2 scale
-            })
-            st.dataframe(term_pref_sample, hide_index=True)
-            
-            st.write("**CourseTerms Sheet:**")
-            course_terms_sample = pd.DataFrame({
-                'Course': ['ACTL1', 'ACTL1', 'ACTL2'],
-                'AllowedTerm': ['T1', 'T3', 'T2']
-            })
-            st.dataframe(course_terms_sample, hide_index=True)
-    
-    # Download template button
-    if st.button("Download Excel Template"):
-        template_data = create_excel_template()
-        if template_data:
-            st.download_button(
-                label="Download Template File",
-                data=template_data,
-                file_name="course_covering_template.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.error("Excel template generation failed. Please create the file manually or use CSV format.")
-            
-            # Provide CSV alternative
-            st.subheader("Alternative: Create CSV Files")
-            st.markdown("""
-            Since Excel libraries are not available, you can create 5 separate CSV files:
-            1. **courses.csv** - Course, Classes
-            2. **professors.csv** - Professor, MaxClasses (max classes per term)
-            3. **course_preferences.csv** - Course, Professor, Preference (0,1,2 scale)
-            4. **term_preferences.csv** - Professor, Term, Preference (use T1, T2, T3) (0,1,2 scale)
-            5. **course_terms.csv** - Course, AllowedTerm (which terms each course can be offered)
-            
-            Then upload each file separately or combine them into one Excel file manually.
-            """)
-    
-    # File upload
-    uploaded_file = st.file_uploader(
-        "Upload your Excel file:",
-        type=['xlsx', 'xls'],
-        help="Upload an Excel file with the required sheets and format"
-    )
-    
-    if uploaded_file is not None:
-        try:
-            # Read Excel file
-            with st.spinner("Reading Excel file..."):
-                excel_data = pd.ExcelFile(uploaded_file)
-                
-                # Validate required sheets (removed Terms sheet)
-                required_sheets = ['Courses', 'Professors', 'CoursePreferences', 'TermPreferences', 'CourseTerms']
-                missing_sheets = [sheet for sheet in required_sheets if sheet not in excel_data.sheet_names]
-                
-                if missing_sheets:
-                    st.error(f"Missing required sheets: {', '.join(missing_sheets)}")
-                    return
-                
-                # Read all sheets
-                courses_df = pd.read_excel(uploaded_file, sheet_name='Courses')
-                professors_df = pd.read_excel(uploaded_file, sheet_name='Professors')
-                course_pref_df = pd.read_excel(uploaded_file, sheet_name='CoursePreferences')
-                term_pref_df = pd.read_excel(uploaded_file, sheet_name='TermPreferences')
-                course_terms_df = pd.read_excel(uploaded_file, sheet_name='CourseTerms')
-                
-                # Process data
-                courses = courses_df['Course'].tolist()
-                professors = professors_df['Professor'].tolist()
-                terms = ['T1', 'T2', 'T3']  # Fixed terms, no need for sheet
-                
-                # Course classes
-                course_classes = dict(zip(courses_df['Course'], courses_df['Classes']))
-                
-                # Professor max classes per term (changed from MaxCourses to MaxClasses)
-                professor_max_classes = dict(zip(professors_df['Professor'], professors_df['MaxClasses']))
-                
-                # Course preferences - validate scale
-                course_preferences = {}
-                for _, row in course_pref_df.iterrows():
-                    pref_value = row['Preference']
-                    if pref_value not in [0, 1, 2]:
-                        st.warning(f"Invalid preference value {pref_value} for course {row['Course']} - professor {row['Professor']}. Expected 0, 1, or 2.")
-                        pref_value = min(2, max(0, pref_value))  # Clamp to valid range
-                    course_preferences[(row['Course'], row['Professor'])] = pref_value
-                
-                # Term preferences - validate scale
-                term_preferences = {}
-                for _, row in term_pref_df.iterrows():
-                    pref_value = row['Preference']
-                    if pref_value not in [0, 1, 2]:
-                        st.warning(f"Invalid preference value {pref_value} for professor {row['Professor']} - term {row['Term']}. Expected 0, 1, or 2.")
-                        pref_value = min(2, max(0, pref_value))  # Clamp to valid range
-                    term_preferences[(row['Professor'], row['Term'])] = pref_value
-                
-                # Course allowed terms
-                course_allowed_terms = {}
-                for course in courses:
-                    course_allowed_terms[course] = []
-                for _, row in course_terms_df.iterrows():
-                    course_allowed_terms[row['Course']].append(row['AllowedTerm'])
-                
-                # Store in session state
-                st.session_state.courses = courses
-                st.session_state.professors = professors
-                st.session_state.terms = terms
-                st.session_state.course_classes = course_classes
-                st.session_state.professor_max_classes = professor_max_classes  # Changed variable name
-                st.session_state.course_preferences = course_preferences
-                st.session_state.term_preferences = term_preferences
-                st.session_state.course_allowed_terms = course_allowed_terms
-                st.session_state.max_classes = 3  # Default value for Excel upload
-                
-                st.success("Excel file loaded successfully!")
-                
-                # Show summary
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Courses", len(courses))
-                with col2:
-                    st.metric("Professors", len(professors))
-                with col3:
-                    st.metric("Terms", len(terms))
-                
-                # Show loaded data preview
-                st.subheader("Data Preview")
-                
-                tab1, tab2, tab3 = st.tabs(["Courses", "Professors", "Preferences"])
-                
-                with tab1:
-                    st.write("**Course Configuration:**")
-                    course_summary = pd.DataFrame({
-                        'Course': courses,
-                        'Classes': [course_classes[c] for c in courses],
-                        'Allowed Terms': [', '.join(course_allowed_terms[c]) for c in courses]
-                    })
-                    st.dataframe(course_summary, hide_index=True)
-                
-                with tab2:
-                    st.write("**Professor Configuration:**")
-                    prof_summary = pd.DataFrame({
-                        'Professor': professors,
-                        'Max Classes': [professor_max_classes[p] for p in professors]
-                    })
-                    st.dataframe(prof_summary, hide_index=True)
-                
-                with tab3:
-                    st.write("**Course Preferences Matrix:**")
-                    course_pref_matrix = pd.DataFrame(index=courses, columns=professors)
-                    for course in courses:
-                        for prof in professors:
-                            course_pref_matrix.loc[course, prof] = course_preferences.get((course, prof), 0)
-                    
-                    # Show table
-                    st.dataframe(course_pref_matrix)
-                    
-                    # Show heatmap with debugging
-                    try:
-                        # Debug info
-                        st.write(f"Matrix shape: {course_pref_matrix.shape}")
-                        st.write(f"Matrix values type: {type(course_pref_matrix.values)}")
-                        
-                        # Convert to numeric and handle any errors
-                        numeric_matrix = pd.to_numeric(course_pref_matrix.values.flatten(), errors='coerce').reshape(course_pref_matrix.shape)
-                        
-                        fig_course = px.imshow(
-                            numeric_matrix,
-                            labels=dict(x="Professor", y="Course", color="Course Preference"),
-                            x=course_pref_matrix.columns.tolist(),
-                            y=course_pref_matrix.index.tolist(),
-                            color_continuous_scale="RdYlGn",
-                            range_color=[0, 2],
-                            title="Course Preference Heatmap"
-                        )
-                        st.plotly_chart(fig_course, use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Error creating course preference heatmap: {str(e)}")
-                        st.write("Matrix data:", course_pref_matrix)
-                    
-                    st.write("**Term Preferences Matrix:**")
-                    term_pref_matrix = pd.DataFrame(index=professors, columns=terms)
-                    for prof in professors:
-                        for term in terms:
-                            term_pref_matrix.loc[prof, term] = term_preferences.get((prof, term), 0)
-                    
-                    # Show table
-                    st.dataframe(term_pref_matrix)
-                    
-                    # Show heatmap with debugging
-                    try:
-                        # Debug info
-                        st.write(f"Term matrix shape: {term_pref_matrix.shape}")
-                        st.write(f"Term matrix values type: {type(term_pref_matrix.values)}")
-                        
-                        # Convert to numeric and handle any errors
-                        numeric_term_matrix = pd.to_numeric(term_pref_matrix.values.flatten(), errors='coerce').reshape(term_pref_matrix.shape)
-                        
-                        fig_term = px.imshow(
-                            numeric_term_matrix,
-                            labels=dict(x="Term", y="Professor", color="Term Preference"),
-                            x=term_pref_matrix.columns.tolist(),
-                            y=term_pref_matrix.index.tolist(),
-                            color_continuous_scale="RdYlGn",
-                            range_color=[0, 2],
-                            title="Term Preference Heatmap"
-                        )
-                        st.plotly_chart(fig_term, use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Error creating term preference heatmap: {str(e)}")
-                        st.write("Term matrix data:", term_pref_matrix)
-                
-                # Run optimization button
-                if st.button("Run Optimization", type="primary"):
-                    st.session_state.step = 2
-                    st.rerun()
-                    
-        except Exception as e:
-            st.error(f"Error reading Excel file: {str(e)}")
-            st.write("Please check that your file format matches the required template.")
-
-
-def create_excel_template():
-    """Create an Excel template file with sample data using only pandas (no additional dependencies)."""
-    import io
-    
-    # Create sample data for all sheets
-    sheets_content = {}
-    
-    # Sample data
-    courses_data = pd.DataFrame({
-        'Course': ['ACTL1', 'ACTL2', 'ACTL3', 'ACTL4', 'ACTL5'],
-        'Classes': [2, 3, 1, 2, 3]
-    })
-    
-    professors_data = pd.DataFrame({
-        'Professor': ['Jonathan', 'JK', 'Patrick', 'Andres'],
-        'MaxClasses': [3, 3, 3, 3]  # Max classes per term, not total courses
-    })
-    
-    # Fixed terms - no need for separate sheet
-    terms = ['T1', 'T2', 'T3']
-    
-    # Course preferences (sample data) - using 0,1,2 scale
-    course_pref_data = []
-    for course in courses_data['Course']:
-        for prof in professors_data['Professor']:
-            course_pref_data.append({
-                'Course': course,
-                'Professor': prof,
-                'Preference': 1  # Default preference
-            })
-    course_pref_df = pd.DataFrame(course_pref_data)
-    
-    # Term preferences (sample data) - using 0,1,2 scale
-    term_pref_data = []
-    for prof in professors_data['Professor']:
-        for term in terms:  # Use the terms list instead of terms_data
-            term_pref_data.append({
-                'Professor': prof,
-                'Term': term,
-                'Preference': 1  # Default preference
-            })
-    term_pref_df = pd.DataFrame(term_pref_data)
-    
-    # Course terms (default each course in T1)
-    course_terms_data = []
-    for course in courses_data['Course']:
-        course_terms_data.append({
-            'Course': course,
-            'AllowedTerm': 'T1'
-        })
-    course_terms_df = pd.DataFrame(course_terms_data)
-    
-    # Try to create Excel file, fall back to CSV if Excel libraries not available
-    try:
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-            courses_data.to_excel(writer, sheet_name='Courses', index=False)
-            professors_data.to_excel(writer, sheet_name='Professors', index=False)
-            # No Terms sheet needed - T1, T2, T3 are fixed
-            course_pref_df.to_excel(writer, sheet_name='CoursePreferences', index=False)
-            term_pref_df.to_excel(writer, sheet_name='TermPreferences', index=False)
-            course_terms_df.to_excel(writer, sheet_name='CourseTerms', index=False)
-        excel_buffer.seek(0)
-        return excel_buffer.getvalue()
-    except ImportError:
-        # Fall back to CSV format if Excel libraries not available
-        st.warning("Excel libraries not available. Download CSV files instead.")
-        return None
-
-
-def show_setup_step():
-    """Show the setup step."""
-    st.header("Step 1: Setup Courses, Professors, and Terms")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.subheader("Courses")
-        courses_input = st.text_area(
-            "Enter courses (one per line):",
-            value="ACTL1\nACTL2\nACTL3\nACTL4\nACTL5",
-            height=120
-        )
-    
-    with col2:
-        st.subheader("Professors")
-        professors_input = st.text_area(
-            "Enter professors (one per line):",
-            value="Jonathan\nJK\nPatrick\nAndres",
-            height=120
-        )
-    
-    with col3:
-        st.subheader("Terms")
-        terms_input = st.text_area(
-            "Enter terms (one per line):",
-            value="T1\nT2\nT3",
-            height=120
-        )
-    
-    # Course classes configuration
-    st.subheader("Course Configuration")
-    courses_preview = [course.strip() for course in courses_input.split('\n') if course.strip()]
-    terms_preview = [term.strip() for term in terms_input.split('\n') if term.strip()]
-    
-    if courses_preview and terms_preview:
-        st.write("Configure each course:")
-        course_classes = {}
-        course_allowed_terms = {}
+        total_available_streams = sum([
+            self.professor_term_limits.get((prof, term), 0)
+            for prof in self.professors
+            for term in self.terms
+        ])
         
-        cols = st.columns(min(2, len(courses_preview)))
-        for idx, course in enumerate(courses_preview):
-            with cols[idx % len(cols)]:
-                st.write(f"**{course}**")
-                
-                # Number of classes for this course
-                classes = st.number_input(
-                    f"Classes:",
-                    min_value=1, max_value=5, value=2,
-                    key=f"classes_{course}"
+        if total_required_streams > total_available_streams:
+            violations.append(f"Total required streams ({total_required_streams}) exceed total available capacity ({total_available_streams})")
+        
+        # Check total course constraints
+        total_required_courses = sum([
+            1 for course in self.courses
+            for term in self.terms
+            if self.course_offerings.get((course, term), 0) == 1
+        ])
+        
+        total_available_courses = sum(self.professor_total_load.values())
+        
+        if total_required_courses > total_available_courses:
+            violations.append(f"Total required courses ({total_required_courses}) exceed total available slots ({total_available_courses})")
+        
+        return violations
+    
+    def get_model_summary(self):
+        """Get summary of model parameters for validation."""
+        summary = {
+            'courses': len(self.courses),
+            'professors': len(self.professors),
+            'terms': len(self.terms),
+            'total_offerings': sum(self.course_offerings.values()),
+            'total_streams_required': sum([
+                self.course_streams.get((course, term), 1)
+                for course in self.courses
+                for term in self.terms
+                if self.course_offerings.get((course, term), 0) == 1
+            ]),
+            'total_capacity_streams': sum([
+                self.professor_term_limits.get((prof, term), 0)
+                for prof in self.professors
+                for term in self.terms
+            ]),
+            'total_capacity_courses': sum(self.professor_total_load.values()),
+            'preference_ranges': {
+                'course_preferences': (
+                    min(self.course_preferences.values()) if self.course_preferences else 0,
+                    max(self.course_preferences.values()) if self.course_preferences else 0
+                ),
+                'term_preferences': (
+                    min(self.term_preferences.values()) if self.term_preferences else 0,
+                    max(self.term_preferences.values()) if self.term_preferences else 0
                 )
-                course_classes[course] = classes
-                
-                # Which terms this course can be offered
-                allowed_terms = st.multiselect(
-                    f"Allowed terms:",
-                    options=terms_preview,
-                    default=[terms_preview[0]],  # Default to first term
-                    key=f"allowed_terms_{course}"
-                )
-                course_allowed_terms[course] = allowed_terms
-                
-                if not allowed_terms:
-                    st.warning(f"Please select at least one term for {course}")
-        
-        # Show course-term matrix
-        if course_classes and course_allowed_terms:
-            st.write("**Course-Term Availability Matrix:**")
-            matrix_data = []
-            for course in courses_preview:
-                row_data = {'Course': course, 'Classes': course_classes[course]}
-                for term in terms_preview:
-                    row_data[term] = '✓' if term in course_allowed_terms.get(course, []) else '✗'
-                matrix_data.append(row_data)
-            
-            matrix_df = pd.DataFrame(matrix_data)
-            st.dataframe(matrix_df, width='stretch', hide_index=True)
-    
-    # Professor loading configuration
-    st.subheader("Professor Loading Configuration")
-    professors_preview = [prof.strip() for prof in professors_input.split('\n') if prof.strip()]
-    
-    if professors_preview:
-        st.write("Set maximum classes per term for each professor:")
-        professor_max_classes = {}
-        
-        cols = st.columns(min(4, len(professors_preview)))
-        for idx, professor in enumerate(professors_preview):
-            with cols[idx % len(cols)]:
-                max_classes_prof = st.number_input(
-                    f"Max classes for {professor}:",
-                    min_value=1, max_value=8, value=3,
-                    key=f"max_classes_{professor}"
-                )
-                professor_max_classes[professor] = max_classes_prof
-    
-    # Parameters
-    st.subheader("Global Parameters")
-    max_classes = st.number_input(
-        "Maximum classes per professor per term:",
-        min_value=1, max_value=6, value=3
-    )
-    
-    # Process input and move to next step
-    if st.button("Next: Set Preferences", type="primary"):
-        courses = [course.strip() for course in courses_input.split('\n') if course.strip()]
-        professors = [prof.strip() for prof in professors_input.split('\n') if prof.strip()]
-        terms = [term.strip() for term in terms_input.split('\n') if term.strip()]
-        
-        if not courses or not professors or not terms:
-            st.error("Please enter at least one course, professor, and term.")
-        elif not all(course_allowed_terms.values()):
-            st.error("Please select allowed terms for all courses.")
-        else:
-            st.session_state.courses = courses
-            st.session_state.professors = professors
-            st.session_state.terms = terms
-            st.session_state.course_classes = course_classes
-            st.session_state.course_allowed_terms = course_allowed_terms
-            st.session_state.professor_max_courses = professor_max_classes  # This represents total courses limit (b_j)
-            st.session_state.max_classes = max_classes
-            st.session_state.step = 2
-            st.rerun()
-
-
-def show_preferences_step():
-    """Show the preferences step."""
-    st.header("Step 2: Set Preference Scores")
-    
-    courses = st.session_state.courses
-    professors = st.session_state.professors
-    terms = st.session_state.terms
-    
-    # Course Preferences
-    st.subheader("Course Preferences")
-    st.markdown("Set how much each professor prefers to teach each course:")
-    st.markdown("**0 = Cannot Teach, 1 = Can Teach (Low Preference), 2 = Strongly Prefer**")
-    
-    # Create course preference matrix
-    course_pref_data = []
-    
-    for professor in professors:
-        st.write(f"**{professor}'s Course Preferences:**")
-        cols = st.columns(min(4, len(courses)))
-        
-        for idx, course in enumerate(courses):
-            with cols[idx % len(cols)]:
-                existing_pref = st.session_state.course_preferences.get((course, professor), 1)
-                pref = st.selectbox(
-                    f"{course}",
-                    options=[0, 1, 2],  # Updated to use 0,1,2 scale
-                    index=[0, 1, 2].index(existing_pref) if existing_pref in [0, 1, 2] else 1,
-                    key=f"course_pref_{course}_{professor}"
-                )
-                st.session_state.course_preferences[(course, professor)] = pref
-                course_pref_data.append({
-                    'Course': course,
-                    'Professor': professor,
-                    'Preference': pref
-                })
-    
-    # Term Preferences
-    st.subheader("Term Preferences")
-    st.markdown("Set how much each professor prefers to teach in each term:")
-    
-    for professor in professors:
-        st.write(f"**{professor}'s Term Preferences:**")
-        cols = st.columns(len(terms))
-        
-        for idx, term in enumerate(terms):
-            with cols[idx]:
-                existing_pref = st.session_state.term_preferences.get((professor, term), 1)
-                pref = st.selectbox(
-                    f"{term}",
-                    options=[0, 1, 2],  # Updated to use 0,1,2 scale
-                    index=[0, 1, 2].index(existing_pref) if existing_pref in [0, 1, 2] else 1,
-                    key=f"term_pref_{professor}_{term}"
-                )
-                st.session_state.term_preferences[(professor, term)] = pref
-    
-    # Show preference matrices
-    st.subheader("Preference Overview")
-    
-    # Course preference heatmap
-    if course_pref_data:
-        course_pref_df = pd.DataFrame(course_pref_data)
-        course_pivot = course_pref_df.pivot(index='Course', columns='Professor', values='Preference')
-        
-        fig1 = px.imshow(
-            course_pivot.values,
-            labels=dict(x="Professor", y="Course", color="Course Preference"),
-            x=course_pivot.columns,
-            y=course_pivot.index,
-            color_continuous_scale="RdYlGn",
-            range_color=[0, 2],  # Updated range to 0-2
-            title="Course Preference Matrix"
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    # Term preference heatmap
-    term_pref_data = []
-    for professor in professors:
-        for term in terms:
-            pref_value = st.session_state.term_preferences.get((professor, term), 1)
-            term_pref_data.append({
-                'Professor': professor,
-                'Term': term,
-                'Preference': pref_value
-            })
-    
-    if term_pref_data:
-        term_pref_df = pd.DataFrame(term_pref_data)
-        term_pivot = term_pref_df.pivot(index='Professor', columns='Term', values='Preference')
-        
-        fig2 = px.imshow(
-            term_pivot.values,
-            labels=dict(x="Term", y="Professor", color="Term Preference"),
-            x=term_pivot.columns,
-            y=term_pivot.index,
-            color_continuous_scale="RdYlGn",
-            range_color=[0, 2],  # Updated range to 0-2
-            title="Term Preference Matrix"
-        )
-        st.plotly_chart(fig2, width='stretch')
-    
-    # Navigation buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("← Back to Setup"):
-            st.session_state.step = 1
-            st.rerun()
-    
-    with col2:
-        if st.button("Run Optimization →", type="primary"):
-            st.session_state.step = 3
-            st.rerun()
-
-
-def show_results_step():
-    """Show the results step."""
-    st.header("Step 3: Optimization Results")
-    
-    courses = st.session_state.courses
-    professors = st.session_state.professors
-    terms = st.session_state.terms
-    course_preferences = st.session_state.course_preferences
-    term_preferences = st.session_state.term_preferences
-    course_classes = st.session_state.course_classes
-    course_allowed_terms = st.session_state.course_allowed_terms
-    professor_max_courses = st.session_state.professor_max_courses
-    max_classes = st.session_state.max_classes
-    
-    # Run optimization
-    with st.spinner("Running optimization..."):
-        problem = CourseCoveringProblem(
-            courses=courses,
-            professors=professors,
-            terms=terms,
-            course_preferences=course_preferences,
-            term_preferences=term_preferences,
-            course_classes=course_classes,
-            professor_max_courses=professor_max_courses,  # Individual limits per professor (total courses)
-            course_allowed_terms=course_allowed_terms,  # Specific allowed terms per course
-            max_classes_per_term=max_classes
-        )
-        
-        solution = problem.solve()
-    
-    # Display results
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Status", solution['status'])
-    with col2:
-        st.metric("Objective Value", f"{solution.get('objective_value', 0):.1f}")
-    with col3:
-        uncovered_count = len(solution.get('uncovered_courses', []))
-        st.metric("Uncovered Courses", uncovered_count)
-    
-    if solution['status'] == 'Optimal':
-        
-        # Check for "ghost courses" - courses marked as offered but not assigned
-        ghost_courses = []
-        for course in courses:
-            for term in course_allowed_terms[course]:
-                if problem.o_vars[(course, term)].varValue == 1:  # Course is marked as offered
-                    if (course, term) not in solution['assignments']:  # But no professor assigned
-                        ghost_courses.append((course, term))
-        
-        if ghost_courses:
-            st.warning("⚠️ Ghost Courses Detected")
-            st.markdown("The following courses are marked as 'offered' but have no professor assigned due to the ≤ constraint:")
-            for course, term in ghost_courses:
-                st.write(f"  • {course} in {term}")
-            st.markdown("This occurs because the constraint allows O_ik = 1 even when no professor is assigned.")
-        
-        # Course assignments by term
-        st.subheader("Course Assignments by Term")
-        
-        assignments_data = []
-        for term in terms:
-            term_assignments = []
-            for course in courses:
-                if (course, term) in solution['assignments']:
-                    professor = solution['assignments'][(course, term)]
-                    classes = course_classes[course]
-                    term_assignments.append(f"{course} → {professor} ({classes} classes)")
-                    assignments_data.append({
-                        'Term': term,
-                        'Course': course,
-                        'Professor': professor,
-                        'Classes': classes,
-                        'Status': 'Assigned'
-                    })
-            
-            if term_assignments:
-                st.write(f"**{term}:**")
-                for assignment in term_assignments:
-                    st.write(f"  • {assignment}")
-            else:
-                st.write(f"**{term}:** No courses assigned")
-        
-        # Assignments dataframe
-        if assignments_data:
-            assignments_df = pd.DataFrame(assignments_data)
-            st.dataframe(assignments_df, width='stretch', hide_index=True)
-        
-        # Professor workload analysis
-        st.subheader("Professor Workload Analysis")
-        
-        workload_summary_data = []
-        workload_data = []
-        for professor in professors:
-            prof_data = solution['professor_loads'][professor]
-            total_courses = prof_data['courses']
-            max_allowed_courses = professor_max_courses[professor]  # Individual limit
-            
-            workload_summary_data.append({
-                'Professor': professor,
-                'Total Courses': total_courses,
-                'Max Allowed': max_allowed_courses,
-                'Course Utilization %': (total_courses / max_allowed_courses) * 100 if max_allowed_courses > 0 else 0
-            })
-            
-            for term in terms:
-                classes_in_term = prof_data['classes_per_term'][term]
-                workload_data.append({
-                    'Professor': professor,
-                    'Term': term,
-                    'Classes': classes_in_term,
-                    'Class Utilization %': (classes_in_term / max_classes) * 100 if max_classes > 0 else 0
-                })
-        
-        # Show professor workload summary
-        workload_summary_df = pd.DataFrame(workload_summary_data)
-        st.write("**Professor Course Loads:**")
-        st.dataframe(workload_summary_df, width='stretch', hide_index=True)
-        
-        workload_df = pd.DataFrame(workload_data)
-        
-        # Workload heatmap
-        workload_pivot = workload_df.pivot(index='Professor', columns='Term', values='Classes')
-        fig3 = px.imshow(
-            workload_pivot.values,
-            labels=dict(x="Term", y="Professor", color="Classes"),
-            x=workload_pivot.columns,
-            y=workload_pivot.index,
-            color_continuous_scale="Blues",
-            title="Professor Workload by Term (Classes)"
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-        
-        # Course offerings summary
-        st.subheader("Course Offerings Summary")
-        
-        if solution['course_offerings']:
-            offering_data = []
-            for course, offered_terms in solution['course_offerings'].items():
-                offering_data.append({
-                    'Course': course,
-                    'Offered Terms': ', '.join(offered_terms),
-                    'Number of Terms': len(offered_terms),
-                    'Total Classes': course_classes[course]
-                })
-            
-            offerings_df = pd.DataFrame(offering_data)
-            st.dataframe(offerings_df, width='stretch', hide_index=True)
-        
-        # Uncovered courses
-        if solution.get('uncovered_courses'):
-            st.subheader("⚠️ Uncovered Courses")
-            for course in solution['uncovered_courses']:
-                st.error(f"**{course}** ({course_classes[course]} classes) - No assignment possible")
-        else:
-            st.success("🎉 All courses are covered!")
-        
-        # Download results
-        st.subheader("Download Results")
-        if assignments_data:
-            csv_buffer = io.StringIO()
-            assignments_df.to_csv(csv_buffer, index=False)
-            csv_data = csv_buffer.getvalue()
-            
-            st.download_button(
-                label="📥 Download Assignment Results (CSV)",
-                data=csv_data,
-                file_name="multi_term_course_assignments.csv",
-                mime="text/csv"
-            )
-        
-    else:
-        st.error(f"Optimization failed: {solution['status']}")
-        st.write("Possible reasons:")
-        st.write("- Class load constraints are too restrictive (try increasing max classes per term)")
-        st.write("- Not enough professors for the required course coverage")
-        st.write("- Preference scores are too low (all 0s)")
-    
-    # Navigation
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("← Back to Preferences"):
-            st.session_state.step = 2
-            st.rerun()
-    
-    with col2:
-        if st.button("🔄 Start Over"):
-            # Reset all session state
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-
-
-if __name__ == "__main__":
-    main()
+            }
+        }
+        return summary
