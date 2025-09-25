@@ -226,12 +226,12 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="RASTA-OP - Course Assignment Optimizer",
+        page_title="RASTA-OP",
         page_icon="🎓",
         layout="wide"
     )
     
-    st.title("🎓 RASTA-OP - Course Assignment Optimizer")
+    st.title("RASTA-OP")
     st.markdown("Optimize faculty assignments using exact mathematical formulation with L_jk and b_j constraints")
     st.markdown("---")
     
@@ -1823,3 +1823,4 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
