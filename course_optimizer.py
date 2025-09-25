@@ -226,12 +226,12 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="Course Covering Optimizer - Mathematical Formulation",
+        page_title="RASTA-OP - Course Assignment Optimizer",
         page_icon="🎓",
         layout="wide"
     )
     
-    st.title("🎓 Course Covering Optimizer - Mathematical Formulation")
+    st.title("🎓 RASTA-OP - Course Assignment Optimizer")
     st.markdown("Optimize faculty assignments using exact mathematical formulation with L_jk and b_j constraints")
     st.markdown("---")
     
