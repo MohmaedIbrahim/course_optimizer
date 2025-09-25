@@ -226,14 +226,13 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="RASTA-OP - Resource Assignment Scheduling Tool for Academic Optimization",
+        page_title="Course Covering Optimizer - Fixed Matrix Display",
         page_icon="🎓",
         layout="wide"
     )
     
-    st.title("🎓 RASTA-OP")
-    st.markdown("**Resource Assignment Scheduling Tool for Academic Optimization**")
-    st.markdown("Optimize faculty assignments with mathematical precision")
+    st.title("🎓 Course Covering Optimizer - Matrix Display")
+    st.markdown("Optimize faculty assignments with proper matrix visualization")
     st.markdown("---")
     
     # Input method selection
@@ -325,22 +324,22 @@ def show_results_step_fixed():
         
         # 1. MAIN MATRIX - ALL TERMS COMBINED
         st.subheader("📊 Assignment Matrix - All Terms Combined")
-        st.markdown("**Courses (rows) × Staff (columns) | Shows: 1-TermCode or 0 for no assignment**")
+        st.markdown("**Courses (rows) × Staff (columns) | 1 = Assigned, 0 = Not assigned**")
         
         # Create matrix with proper structure
         matrix_all_terms = pd.DataFrame(
             index=courses,     # Course names as row index
             columns=professors, # Professor names as column headers
-            dtype=object  # Changed to object to store strings like "1-T1"
+            dtype=int
         )
         # Initialize with zeros
         matrix_all_terms[:] = 0
         
-        # Fill with assignments showing term information
+        # Fill with assignments
         if solution.get('assignments'):
             for (course, term), professor in solution['assignments'].items():
                 if course in matrix_all_terms.index and professor in matrix_all_terms.columns:
-                    matrix_all_terms.loc[course, professor] = f"1-{term}"
+                    matrix_all_terms.loc[course, professor] = 1
         
         # Display matrix
         st.dataframe(
@@ -350,25 +349,13 @@ def show_results_step_fixed():
         )
         
         # Matrix statistics
-        assignment_count = 0
-        if solution.get('assignments'):
-            assignment_count = len(solution['assignments'])
-        
-        courses_assigned = 0
-        active_staff = 0
-        
-        if solution.get('assignments'):
-            assigned_courses = set()
-            active_professors = set()
-            for (course, term), professor in solution['assignments'].items():
-                assigned_courses.add(course)
-                active_professors.add(professor)
-            courses_assigned = len(assigned_courses)
-            active_staff = len(active_professors)
+        total_assignments = matrix_all_terms.sum().sum()
+        courses_assigned = (matrix_all_terms.sum(axis=1) > 0).sum()
+        active_staff = (matrix_all_terms.sum(axis=0) > 0).sum()
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Assignments", assignment_count)
+            st.metric("Total Assignments", int(total_assignments))
         with col2:
             st.metric("Courses Assigned", f"{courses_assigned}/{len(courses)}")
         with col3:
