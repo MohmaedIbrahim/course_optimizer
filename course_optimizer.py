@@ -1004,7 +1004,7 @@ def show_results_step():
         
         # 1. PRIMARY MATRIX: ALL TERMS COMBINED
         st.subheader("Course Assignment Matrix - All Terms")
-        st.markdown("**Rows = Courses, Columns = Staff Members, Values = Term Number (T1=1, T2=2, T3=3) or 0 (Not Assigned)**")
+        st.markdown("**Rows = Courses, Columns = Staff Members, Values = Term (T1, T2, T3) or 0 (Not Assigned)**")
         
         # Build the matrix data structure
         matrix_data = []
@@ -1014,20 +1014,10 @@ def show_results_step():
             for professor in professors:
                 row_data[professor] = 0
             
-            # Set to term number where assignments exist
+            # Set to term name where assignments exist
             for (assigned_course, term), assigned_professor in assignments.items():
                 if assigned_course == course:
-                    # Convert term to number: T1=1, T2=2, T3=3
-                    if term == 'T1':
-                        term_number = 1
-                    elif term == 'T2':
-                        term_number = 2
-                    elif term == 'T3':
-                        term_number = 3
-                    else:
-                        term_number = 1  # fallback
-                    
-                    row_data[assigned_professor] = term_number
+                    row_data[assigned_professor] = term  # Use term name directly (T1, T2, T3)
             
             matrix_data.append(row_data)
         
@@ -1043,8 +1033,8 @@ def show_results_step():
         )
         
         # Matrix summary
-        total_assignments = (main_matrix_df > 0).sum().sum()  # Count non-zero values
-        courses_with_staff = (main_matrix_df.sum(axis=1) > 0).sum()
+        total_assignments = (main_matrix_df != 0).sum().sum()  # Count non-zero values
+        courses_with_staff = (main_matrix_df != 0).any(axis=1).sum()  # Count courses with any assignment
         
         col1, col2 = st.columns(2)
         with col1:
@@ -1054,9 +1044,9 @@ def show_results_step():
         
         # Add term distribution
         term_counts = {}
-        for term_num in [1, 2, 3]:
-            count = (main_matrix_df == term_num).sum().sum()
-            term_counts[f"T{term_num}"] = count
+        for term in ['T1', 'T2', 'T3']:
+            count = (main_matrix_df == term).sum().sum()
+            term_counts[term] = count
         
         col3, col4, col5 = st.columns(3)
         with col3:
