@@ -258,7 +258,7 @@ def main():
         elif st.session_state.step == 2:
             show_data_analysis_step()
         elif st.session_state.step == 3:
-            show_results_step()
+            show_results_step()  # Use the same results function for both paths
     else:  # Manual Input
         if st.session_state.step == 1:
             show_setup_step()
@@ -267,7 +267,7 @@ def main():
         elif st.session_state.step == 3:
             show_preferences_step()
         elif st.session_state.step == 4:
-            show_results_step()
+            show_results_step()  # Same function for both paths
 
 
 def show_setup_step():
