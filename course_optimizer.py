@@ -1597,8 +1597,17 @@ def show_data_analysis_step():
                     profs_with_score.append(prof)
             
             if len(profs_with_score) > 1:  # Only courses with multiple professors having this score
+                # Find which terms this course is offered in
+                course_terms = []
+                for term in terms:
+                    if course_offerings.get((course, term), 0) == 1:
+                        course_terms.append(term)
+                
+                terms_offered = ', '.join(course_terms) if course_terms else 'Not offered'
+                
                 courses_with_multiple_score.append({
                     'Course': course,
+                    'Terms Offered': terms_offered,
                     'Professors': ', '.join(profs_with_score),
                     'Count': len(profs_with_score)
                 })
