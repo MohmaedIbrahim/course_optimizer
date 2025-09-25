@@ -600,66 +600,115 @@ def show_results_step():
         st.metric("Unassigned Offerings", unassigned_count)
     
     if solution['status'] == 'Optimal':
-        # Course assignments
-        st.subheader("Course Assignments")
+        # Course Assignment Matrix - All Terms (First Priority)
+        st.subheader("Course Assignment Matrix - All Terms Combined")
+        st.markdown("**1 = Course assigned to professor, 0 = Not assigned**")
         
-        if solution['assignments']:
-            assignments_data = []
-            for (course, term), professor in solution['assignments'].items():
-                streams = course_streams.get((course, term), 1)
-                assignments_data.append({
-                    'Course': course,
-                    'Term': term, 
-                    'Professor': professor,
-                    'Streams': streams
-                })
-            
-            assignments_df = pd.DataFrame(assignments_data)
-            st.dataframe(assignments_df, hide_index=True)
+        # Create comprehensive assignment matrix (courses x professors)
+        all_assignments_matrix = pd.DataFrame(0, index=courses, columns=professors)
         
-        # Professor workload analysis
-        st.subheader("Professor Workload Analysis")
+        # Fill in assignments from all terms
+        for (course, term), professor in solution['assignments'].items():
+            all_assignments_matrix.loc[course, professor] = 1
+        
+        # Display as large matrix
+        st.dataframe(all_assignments_matrix, height=max(600, len(courses) * 20))
+        
+        # Individual Term Assignment Matrices
+        st.subheader("Individual Term Assignment Matrices")
+        
+        # Create tabs for each term
+        term_tabs = st.tabs([f"Term {term}" for term in terms])
+        
+        for idx, term in enumerate(terms):
+            with term_tabs[idx]:
+                st.markdown(f"**Assignment Matrix for {term}**")
+                st.markdown("**1 = Course assigned to professor in this term, 0 = Not assigned**")
+                
+                # Create term-specific matrix
+                term_matrix = pd.DataFrame(0, index=courses, columns=professors)
+                
+                # Fill in assignments for this specific term
+                for (course, assigned_term), professor in solution['assignments'].items():
+                    if assigned_term == term:
+                        term_matrix.loc[course, professor] = 1
+                
+                # Display term matrix
+                st.dataframe(term_matrix, height=max(400, len(courses) * 15))
+                
+                # Term summary statistics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    courses_in_term = term_matrix.sum().sum()
+                    st.metric(f"Courses Assigned in {term}", courses_in_term)
+                with col2:
+                    active_professors = (term_matrix.sum(axis=0) > 0).sum()
+                    st.metric(f"Active Professors in {term}", active_professors)
+                with col3:
+                    total_streams_term = sum([course_streams.get((course, term), 0) 
+                                            for course in courses 
+                                            if (course, term) in solution['assignments']])
+                    st.metric(f"Total Streams in {term}", total_streams_term)
+        
+        # Professor workload summary
+        st.subheader("Professor Workload Summary")
         
         workload_data = []
         for professor in professors:
             prof_load = solution['professor_loads'][professor]
             
+            # Count assignments per term
+            term_assignments = {}
+            for term in terms:
+                term_count = 0
+                for (course, assigned_term), assigned_prof in solution['assignments'].items():
+                    if assigned_prof == professor and assigned_term == term:
+                        term_count += 1
+                term_assignments[term] = term_count
+            
             # b_j constraint check
             total_courses = prof_load['total_courses']
             max_total = professor_total_load[professor]
             
-            workload_data.append({
+            row_data = {
                 'Professor': professor,
                 'Total Courses': f"{total_courses}/{max_total}",
-                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%"
-            })
+                'Utilization %': f"{(total_courses/max_total)*100:.1f}%" if max_total > 0 else "0%"
+            }
             
-            # L_jk constraint check per term
+            # Add term-specific data
             for term in terms:
                 streams_in_term = prof_load['streams_per_term'][term]
                 max_streams = professor_term_limits.get((professor, term), 0)
-                utilization = (streams_in_term/max_streams)*100 if max_streams > 0 else 0
-                
-                workload_data.append({
-                    'Professor': f"  {term}",
-                    'Total Courses': f"{streams_in_term}/{max_streams} streams",
-                    'Total Utilization %': f"{utilization:.1f}%"
-                })
+                row_data[f'{term} Courses'] = term_assignments[term]
+                row_data[f'{term} Streams'] = f"{streams_in_term}/{max_streams}"
+            
+            workload_data.append(row_data)
         
         workload_df = pd.DataFrame(workload_data)
-        st.dataframe(workload_df, hide_index=True)
+        st.dataframe(workload_df, hide_index=True, height=400)
         
-        # Unassigned courses
+        # Unassigned courses (if any)
         if solution.get('unassigned_offerings'):
-            st.subheader("⚠️ Unassigned Course Offerings")
+            st.subheader("Unassigned Course Offerings")
+            unassigned_data = []
             for course, term in solution['unassigned_offerings']:
                 streams = course_streams.get((course, term), 1)
-                st.error(f"**{course}** in **{term}** ({streams} streams) - Could not assign")
+                unassigned_data.append({
+                    'Course': course,
+                    'Term': term,
+                    'Streams': streams,
+                    'Status': 'Unassigned'
+                })
+            
+            if unassigned_data:
+                unassigned_df = pd.DataFrame(unassigned_data)
+                st.dataframe(unassigned_df, hide_index=True)
         else:
-            st.success("🎉 All course offerings successfully assigned!")
+            st.success("All course offerings successfully assigned!")
             
     elif solution['status'] == 'Infeasible':
-        st.error("❌ Problem is infeasible - no solution exists")
+        st.error("Problem is infeasible - no solution exists")
         
         if solution.get('constraint_violations'):
             st.subheader("Possible Issues:")
@@ -1423,13 +1472,10 @@ def show_data_analysis_step():
     with col1:
         st.metric("Average Preference", f"{pref_df['Preference'].mean():.2f}")
     with col2:
-        zero_prefs = len(pref_df[pref_df['Preference'] == 0])
-        st.metric("Zero Preferences", zero_prefs)
-        if zero_prefs > 0:
-            st.warning(f"⚠️ {zero_prefs} zero preferences may cause assignment difficulties")
-    with col3:
         high_prefs = len(pref_df[pref_df['Preference'] >= 8])
         st.metric("High Preferences (≥8)", high_prefs)
+    with col3:
+        st.metric("Preference Range", f"{pref_df['Preference'].min():.0f} - {pref_df['Preference'].max():.0f}")
     
     # Term Preferences Heatmap (t_jk)
     st.subheader("Term Preferences Heatmap (t_jk)")
@@ -1476,64 +1522,12 @@ def show_data_analysis_step():
     with col1:
         st.metric("Average Term Preference", f"{term_pref_df['Preference'].mean():.2f}")
     with col2:
-        zero_term_prefs = len(term_pref_df[term_pref_df['Preference'] == 0])
-        st.metric("Zero Term Preferences", zero_term_prefs)
-        if zero_term_prefs > 0:
-            st.warning(f"⚠️ {zero_term_prefs} professors cannot teach in certain terms")
-    with col3:
         # Show term popularity
         term_avg = term_pref_df.groupby('Term')['Preference'].mean()
         most_popular_term = term_avg.idxmax()
         st.metric("Most Popular Term", f"{most_popular_term} ({term_avg[most_popular_term]:.1f})")
-    
-    # Feasibility Analysis
-    st.subheader("Feasibility Analysis")
-    
-    # Check term-wise feasibility
-    feasibility_data = []
-    warnings = []
-    
-    for term in terms:
-        term_capacity = sum([professor_term_limits.get((prof, term), 0) for prof in professors])
-        term_demand = sum([course_streams.get((course, term), 0) 
-                          for course in courses 
-                          if course_offerings.get((course, term), 0) == 1])
-        
-        feasibility_data.append({
-            'Term': term,
-            'Capacity (Streams)': term_capacity,
-            'Demand (Streams)': term_demand,
-            'Balance': term_capacity - term_demand,
-            'Status': '✅ Feasible' if term_capacity >= term_demand else '❌ Over-demand'
-        })
-        
-        if term_demand > term_capacity:
-            warnings.append(f"**{term}**: Demand ({term_demand}) exceeds capacity ({term_capacity})")
-    
-    feasibility_df = pd.DataFrame(feasibility_data)
-    st.dataframe(feasibility_df, hide_index=True)
-    
-    # Overall feasibility check
-    total_offerings = sum([1 for course in courses for term in terms 
-                          if course_offerings.get((course, term), 0) == 1])
-    total_capacity = sum(professor_total_load.values())
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Total Course Offerings", total_offerings)
-    with col2:
-        st.metric("Total Professor Capacity", total_capacity)
-    
-    if total_offerings > total_capacity:
-        warnings.append(f"**Overall**: Total offerings ({total_offerings}) exceed total professor capacity ({total_capacity})")
-    
-    # Display warnings
-    if warnings:
-        st.subheader("⚠️ Feasibility Warnings")
-        for warning in warnings:
-            st.error(warning)
-    else:
-        st.success("✅ No obvious feasibility issues detected")
+    with col3:
+        st.metric("Term Preference Range", f"{term_pref_df['Preference'].min():.0f} - {term_pref_df['Preference'].max():.0f}")
     
     # Navigation
     col1, col2 = st.columns(2)
