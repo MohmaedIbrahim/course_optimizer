@@ -1109,149 +1109,18 @@ def show_excel_upload_step():
 4   ACTL3   1    2    2
             """)
     
-def create_excel_template_structured():
-    """Create template files for the required Excel structure."""
-    try:
-        import io
-        import zipfile
-        
-        # Create sample data for all 4 sheets
-        
-        # Sheet 1: c_ij (Course Preferences)
-        sheet1_data = """,,ACTL1,ACTL2,ACTL3,ACTL4
-,,Act1,Act2,Act3,Act4
-Jonathan,8,6,4,7
-JK,5,9,3,5
-Patrick,7,4,8,6
-Andres,6,7,5,8"""
-        
-        # Sheet 2: t_jk, L_jk, b_j (Professor Constraints)
-        sheet2_data = """Professor,T1_Pref,T2_Pref,T3_Pref,T1_Limit,T2_Limit,T3_Limit,Total_Load
-Jonathan,9,6,8,3,2,3,5
-JK,7,8,5,2,3,2,4
-Patrick,8,7,9,3,3,3,6
-Andres,6,9,7,2,2,3,5"""
-        
-        # Sheet 3: O_jk (Course Offerings)
-        sheet3_data = """Course,T1,T2,T3
-ACTL1,1,0,1
-ACTL2,0,1,0
-ACTL3,1,1,1
-ACTL4,1,0,1"""
-        
-        # Sheet 4: n_jk (Course Streams)
-        sheet4_data = """Course,T1,T2,T3
-ACTL1,2,0,1
-ACTL2,0,3,0
-ACTL3,1,2,2
-ACTL4,1,0,1"""
-        
-        # Create a zip file with all CSV templates
-        zip_buffer = io.BytesIO()
-        
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            zip_file.writestr('1_c_ij_course_preferences.csv', sheet1_data)
-            zip_file.writestr('2_professor_constraints.csv', sheet2_data)
-            zip_file.writestr('3_O_jk_course_offerings.csv', sheet3_data)
-            zip_file.writestr('4_n_jk_course_streams.csv', sheet4_data)
-            
-            # Add instructions file
-            instructions = """Excel Template Instructions:
-
-Create an Excel file with 4 sheets using these CSV files as templates:
-
-Sheet 1: c_ij (Course Preferences)
-- Staff names in column A starting from A3
-- Course names in row 1 starting from B1
-- Course codes in row 2 starting from B2
-- Preference scores (0-10) in the data area
-
-Sheet 2: Professor Constraints
-- Column A: Professor names
-- Columns B-D: Term preferences (T1, T2, T3) - scale 0-10
-- Columns E-G: Term stream limits (T1, T2, T3) - max streams per term
-- Column H: Total teaching load (b_j) - total courses per professor
-
-Sheet 3: O_jk (Course Offerings)  
-- Column A: Course codes
-- Columns B-D: T1, T2, T3 with 1/0 values (1=offered, 0=not offered)
-
-Sheet 4: n_jk (Course Streams)
-- Column A: Course codes
-- Columns B-D: T1, T2, T3 with stream counts (integers)
-
-You can import these CSV files into separate sheets in Excel, or copy-paste the data following the structure shown."""
-            
-            zip_file.writestr('README_Instructions.txt', instructions)
-        
-        zip_buffer.seek(0)
-        return zip_buffer.getvalue()
-        
-    except Exception:
-        return None
-
-
     # Download template button
     if st.button("Download Excel Template"):
         template_data = create_excel_template_structured()
         if template_data:
             st.download_button(
-                label="Download Template Files (ZIP)",
+                label="Download Template File",
                 data=template_data,
-                file_name="course_optimizer_template.zip",
-                mime="application/zip",
-                help="Contains CSV files for each sheet and instructions"
+                file_name="course_optimizer_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            # Provide manual template creation guide
-            st.subheader("Manual Template Creation Guide")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**Sheet 1: c_ij (Course Preferences)**")
-                st.code("""
-    A        B      C      D      E
-1           ACTL1  ACTL2  ACTL3  ACTL4
-2           Act1   Act2   Act3   Act4
-3  Jonathan   8      6      4      7
-4  JK         5      9      3      5
-5  Patrick    7      4      8      6
-6  Andres     6      7      5      8
-                """)
-                
-                st.write("**Sheet 3: O_jk (Course Offerings)**")
-                st.code("""
-    A       B   C   D
-1  Course  T1  T2  T3
-2  ACTL1   1   0   1
-3  ACTL2   0   1   0
-4  ACTL3   1   1   1
-5  ACTL4   1   0   1
-                """)
-            
-            with col2:
-                st.write("**Sheet 2: Professor Constraints**")
-                st.code("""
-    A        B  C  D  E  F  G  H
-1  Prof    T1 T2 T3 T1 T2 T3 Total
-2         (Preferences)(Limits)Load
-3  Jonathan 9  6  8  3  2  3   5
-4  JK       7  8  5  2  3  2   4
-5  Patrick  8  7  9  3  3  3   6
-                """)
-                
-                st.write("**Sheet 4: n_jk (Course Streams)**")
-                st.code("""
-    A       B   C   D
-1  Course  T1  T2  T3
-2  ACTL1   2   0   1
-3  ACTL2   0   3   0
-4  ACTL3   1   2   2
-5  ACTL4   1   0   1
-                """)
-            
-            st.info("Copy these templates into a new Excel file with 4 sheets named accordingly.")
+            st.error("Excel template generation requires additional libraries. Please create manually using the format above.")
     
     # File upload
     uploaded_file = st.file_uploader(
@@ -1479,9 +1348,114 @@ You can import these CSV files into separate sheets in Excel, or copy-paste the 
 
 def create_excel_template_structured():
     """Create an Excel template file with the specified structure."""
-    # This would require xlsxwriter or openpyxl
-    # For now, return None to indicate manual creation needed
-    return None
+    try:
+        import openpyxl
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+        import io
+        
+        wb = Workbook()
+        
+        # Sheet 1: c_ij (Course Preferences)
+        ws1 = wb.active
+        ws1.title = "c_ij"
+        
+        # Sample course names in row 1 (B1 onwards)
+        course_names = ["ACTL1", "ACTL2", "ACTL3", "ACTL4", "ACTL5"]
+        # Sample course codes in row 2 (B2 onwards)  
+        course_codes = ["Act1", "Act2", "Act3", "Act4", "Act5"]
+        # Sample staff names in column A (A3 onwards)
+        staff_names = ["Jonathan", "JK", "Patrick", "Andres"]
+        
+        # Add course names to row 1
+        for i, name in enumerate(course_names, start=2):  # Start from column B
+            ws1.cell(row=1, column=i, value=name)
+        
+        # Add course codes to row 2
+        for i, code in enumerate(course_codes, start=2):  # Start from column B
+            ws1.cell(row=2, column=i, value=code)
+        
+        # Add staff names to column A
+        for i, staff in enumerate(staff_names, start=3):  # Start from row 3
+            ws1.cell(row=i, column=1, value=staff)
+        
+        # Fill with sample preference values (5 = neutral)
+        for staff_idx in range(len(staff_names)):
+            for course_idx in range(len(course_codes)):
+                ws1.cell(row=staff_idx+3, column=course_idx+2, value=5)
+        
+        # Sheet 2: t_jk, L_jk, b_j
+        ws2 = wb.create_sheet("t_jk_L_jk_b_j")
+        
+        # Headers
+        headers = ["Staff", "T1", "T2", "T3", "T1", "T2", "T3", "Total"]
+        subheaders = ["", "Term Prefs", "", "", "Max Streams", "", "", "Load"]
+        
+        for i, header in enumerate(headers, start=1):
+            ws2.cell(row=1, column=i, value=header)
+        for i, subheader in enumerate(subheaders, start=1):
+            ws2.cell(row=2, column=i, value=subheader)
+        
+        # Add staff and sample data
+        for i, staff in enumerate(staff_names, start=3):
+            ws2.cell(row=i, column=1, value=staff)  # Staff name
+            # Term preferences (columns 2-4)
+            for j in range(2, 5):
+                ws2.cell(row=i, column=j, value=5)
+            # Max streams per term (columns 5-7)
+            for j in range(5, 8):
+                ws2.cell(row=i, column=j, value=2)
+            # Total load (column 8)
+            ws2.cell(row=i, column=8, value=4)
+        
+        # Sheet 3: O_jk (Course Offerings)
+        ws3 = wb.create_sheet("O_jk")
+        
+        # Headers
+        ws3.cell(row=1, column=1, value="Course")
+        terms = ["T1", "T2", "T3"]
+        for i, term in enumerate(terms, start=2):
+            ws3.cell(row=1, column=i, value=term)
+        
+        # Add courses and sample offerings
+        for i, course in enumerate(course_codes, start=2):
+            ws3.cell(row=i, column=1, value=course)
+            # Sample: offer some courses in different terms
+            ws3.cell(row=i, column=2, value=1 if i % 2 == 0 else 0)  # T1
+            ws3.cell(row=i, column=3, value=1 if i % 3 == 0 else 0)  # T2
+            ws3.cell(row=i, column=4, value=1)  # T3 - all courses offered
+        
+        # Sheet 4: n_jk (Course Streams)
+        ws4 = wb.create_sheet("n_jk")
+        
+        # Headers
+        ws4.cell(row=1, column=1, value="Course")
+        for i, term in enumerate(terms, start=2):
+            ws4.cell(row=1, column=i, value=term)
+        
+        # Add courses and sample stream counts
+        for i, course in enumerate(course_codes, start=2):
+            ws4.cell(row=i, column=1, value=course)
+            # Sample stream counts
+            for j in range(2, 5):  # T1, T2, T3
+                # Only add streams where course is offered (from sheet 3)
+                offering = ws3.cell(row=i, column=j).value
+                if offering == 1:
+                    ws4.cell(row=i, column=j, value=1)  # Default 1 stream
+                else:
+                    ws4.cell(row=i, column=j, value=0)  # No streams if not offered
+        
+        # Save to bytes
+        excel_buffer = io.BytesIO()
+        wb.save(excel_buffer)
+        excel_buffer.seek(0)
+        return excel_buffer.getvalue()
+        
+    except ImportError:
+        return None
+    except Exception as e:
+        st.error(f"Error creating template: {str(e)}")
+        return None
 
 
 if __name__ == "__main__":
