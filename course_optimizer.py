@@ -732,7 +732,7 @@ def show_results_step():
             st.rerun()
     
     with col2:
-        if st.button("�� Start Over"):
+        if st.button("Start Over"):
             # Reset all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -1823,6 +1823,7 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
 
 
 
