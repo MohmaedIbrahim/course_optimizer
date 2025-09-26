@@ -226,12 +226,12 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="RASTA-OP - Course Assignment Optimizer",
-        page_icon="🎓",
+        page_title="RASTA-OP",
+        page_icon="��",
         layout="wide"
     )
     
-    st.title("🎓 RASTA-OP - Course Assignment Optimizer")
+    st.title("RASTA-OP")
     st.markdown("Optimize faculty assignments using exact mathematical formulation with L_jk and b_j constraints")
     st.markdown("---")
     
@@ -732,7 +732,7 @@ def show_results_step():
             st.rerun()
     
     with col2:
-        if st.button("🔄 Start Over"):
+        if st.button("�� Start Over"):
             # Reset all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -1140,7 +1140,7 @@ def show_results_step():
                 streams = course_streams.get((course, term), 1)
                 st.error(f"**{course}** in **{term}** ({streams} streams) - Could not assign")
         else:
-            st.success("🎉 All course offerings successfully assigned!")
+            st.success("�� All course offerings successfully assigned!")
             
     elif solution['status'] == 'Infeasible':
         st.error("❌ Problem is infeasible - no solution exists")
@@ -1167,7 +1167,7 @@ def show_results_step():
             st.rerun()
     
     with col2:
-        if st.button("🔄 Start Over"):
+        if st.button("�� Start Over"):
             # Reset all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -1823,4 +1823,5 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
 
