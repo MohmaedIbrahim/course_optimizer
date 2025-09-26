@@ -1115,7 +1115,7 @@ def show_results_step():
             workload_data.append({
                 'Professor': professor,
                 'Total Courses': f"{total_courses}/{max_total}",
-                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%"
+                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%" if max_total > 0 else "N/A"
             })
             
             # L_jk constraint check per term
@@ -1823,3 +1823,4 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
