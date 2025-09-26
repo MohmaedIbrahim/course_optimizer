@@ -1140,7 +1140,7 @@ def show_results_step():
                 streams = course_streams.get((course, term), 1)
                 st.error(f"**{course}** in **{term}** ({streams} streams) - Could not assign")
         else:
-            st.success("�� All course offerings successfully assigned!")
+            st.success("All course offerings successfully assigned!")
             
     elif solution['status'] == 'Infeasible':
         st.error("❌ Problem is infeasible - no solution exists")
@@ -1823,5 +1823,6 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
 
 
