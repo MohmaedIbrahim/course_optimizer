@@ -226,12 +226,12 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="RASTA-OP",
-        page_icon="��",
+        page_title="RASTA-OP - Course Assignment Optimizer",
+        page_icon="🎓",
         layout="wide"
     )
     
-    st.title("RASTA-OP")
+    st.title("🎓 RASTA-OP - Course Assignment Optimizer")
     st.markdown("Optimize faculty assignments using exact mathematical formulation with L_jk and b_j constraints")
     st.markdown("---")
     
@@ -732,7 +732,7 @@ def show_results_step():
             st.rerun()
     
     with col2:
-        if st.button("Start Over"):
+        if st.button("🔄 Start Over"):
             # Reset all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -1115,7 +1115,7 @@ def show_results_step():
             workload_data.append({
                 'Professor': professor,
                 'Total Courses': f"{total_courses}/{max_total}",
-                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%" if max_total > 0 else "N/A"
+                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%"
             })
             
             # L_jk constraint check per term
@@ -1140,7 +1140,7 @@ def show_results_step():
                 streams = course_streams.get((course, term), 1)
                 st.error(f"**{course}** in **{term}** ({streams} streams) - Could not assign")
         else:
-            st.success("All course offerings successfully assigned!")
+            st.success("🎉 All course offerings successfully assigned!")
             
     elif solution['status'] == 'Infeasible':
         st.error("❌ Problem is infeasible - no solution exists")
@@ -1167,7 +1167,7 @@ def show_results_step():
             st.rerun()
     
     with col2:
-        if st.button("Start Over"):
+        if st.button("🔄 Start Over"):
             # Reset all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -1696,6 +1696,116 @@ def show_data_analysis_step():
         term_range = f"{term_pref_matrix.min().min():.0f} - {term_pref_matrix.max().max():.0f}"
         st.metric("Term Preference Range", term_range)
     
+    # Hierarchical Clustering Analysis for Course Preferences
+    st.subheader("Hierarchical Clustering Analysis (c_ij)")
+    st.markdown("**Clustering professors based on similar course preference patterns**")
+    
+    try:
+        from scipy.cluster.hierarchy import dendrogram, linkage
+        from scipy.spatial.distance import pdist
+        
+        # Transpose matrix so each row is a professor (needed for clustering)
+        prof_preference_matrix = course_pref_matrix.T  # Professors as rows, courses as columns
+        
+        # Compute linkage matrix using Ward's method
+        linkage_matrix = linkage(prof_preference_matrix.values, method='ward')
+        
+        # Create dendrogram
+        fig_dendro = go.Figure()
+        
+        # Calculate dendrogram
+        dend = dendrogram(linkage_matrix, labels=professors, no_plot=True)
+        
+        # Extract dendrogram data
+        icoord = np.array(dend['icoord'])
+        dcoord = np.array(dend['dcoord'])
+        colors = dend['leaves_color_list']
+        
+        # Plot dendrogram lines
+        for i in range(len(icoord)):
+            fig_dendro.add_trace(go.Scatter(
+                x=icoord[i],
+                y=dcoord[i],
+                mode='lines',
+                line=dict(color='rgb(100,100,100)', width=2),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+        
+        # Add professor labels
+        xpos = [(i * 10) + 5 for i in range(len(professors))]
+        fig_dendro.add_trace(go.Scatter(
+            x=xpos,
+            y=[0] * len(professors),
+            mode='text',
+            text=dend['ivl'],
+            textposition='bottom center',
+            textfont=dict(size=10),
+            showlegend=False,
+            hoverinfo='text',
+            hovertext=dend['ivl']
+        ))
+        
+        fig_dendro.update_layout(
+            title="Hierarchical Clustering of Staff Based on Course Preferences",
+            xaxis=dict(title="Staff Members", showticklabels=False),
+            yaxis=dict(title="Distance (Ward's Method)"),
+            height=500,
+            showlegend=False,
+            hovermode='closest'
+        )
+        
+        st.plotly_chart(fig_dendro, use_container_width=True)
+        
+        # Interpretation guide
+        with st.expander("ℹ️ How to interpret the dendrogram"):
+            st.markdown("""
+            **What is this showing?**
+            - The dendrogram groups professors who have similar course preference patterns
+            - Professors who merge at lower heights (closer to the bottom) have more similar preferences
+            - The height of the connection shows how different the groups are
+            
+            **How to use this:**
+            - **Similar preferences:** Professors connected at low heights could potentially substitute for each other
+            - **Distinct preferences:** Professors connected at high heights have very different teaching interests
+            - **Clusters:** Groups that merge together indicate staff with complementary skills
+            
+            **Method:** Uses Ward's linkage with Euclidean distance to minimize variance within clusters
+            """)
+        
+        # Calculate and display cluster statistics
+        st.subheader("Clustering Insights")
+        
+        # Calculate pairwise distances between professors
+        distances = pdist(prof_preference_matrix.values, metric='euclidean')
+        
+        # Find most similar and most different professor pairs
+        from scipy.spatial.distance import squareform
+        dist_matrix = squareform(distances)
+        
+        # Most similar pair (excluding self-comparisons)
+        np.fill_diagonal(dist_matrix, np.inf)
+        min_idx = np.unravel_index(np.argmin(dist_matrix), dist_matrix.shape)
+        most_similar = (professors[min_idx[0]], professors[min_idx[1]], dist_matrix[min_idx])
+        
+        # Most different pair
+        max_idx = np.unravel_index(np.argmax(dist_matrix[dist_matrix != np.inf]), dist_matrix.shape)
+        most_different = (professors[max_idx[0]], professors[max_idx[1]], dist_matrix[max_idx])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Most Similar Staff:**")
+            st.info(f"{most_similar[0]} and {most_similar[1]}\n\nDistance: {most_similar[2]:.2f}")
+            
+        with col2:
+            st.write("**Most Different Staff:**")
+            st.info(f"{most_different[0]} and {most_different[1]}\n\nDistance: {most_different[2]:.2f}")
+        
+    except ImportError:
+        st.warning("Hierarchical clustering requires scipy. Install scipy to enable this feature.")
+    except Exception as e:
+        st.error(f"Error performing clustering analysis: {str(e)}")
+    
     # Navigation
     col1, col2 = st.columns(2)
     with col1:
@@ -1823,8 +1933,3 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
