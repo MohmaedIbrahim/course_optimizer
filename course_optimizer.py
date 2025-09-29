@@ -1026,182 +1026,187 @@ def show_data_analysis_step():
         horizontal=True
     )
     
-    # Add PCA section
-    st.subheader("PCA & K-Means Clustering Visualization")
-    st.markdown("**Visualize data in 2D using Principal Component Analysis with K-Means clustering**")
-    
-    from sklearn.decomposition import PCA
-    from sklearn.cluster import KMeans
-    from sklearn.preprocessing import StandardScaler
-    
-    # Number of clusters selector
-    n_clusters = st.slider(
-        "Select number of clusters (K):",
-        min_value=2,
-        max_value=5,
-        value=3,
-        help="Choose how many clusters to identify in the data"
-    )
-    
-    if clustering_type == "Course Clustering (Which courses are similar?)":
-        st.markdown(f"**PCA plot of courses with {n_clusters} K-Means clusters**")
+    # Add PCA section - with optional sklearn
+    try:
+        from sklearn.decomposition import PCA
+        from sklearn.cluster import KMeans
+        from sklearn.preprocessing import StandardScaler
         
-        # Prepare data: courses as observations (rows), professors as features (columns)
-        data_for_pca = course_pref_matrix.values
+        st.subheader("PCA & K-Means Clustering Visualization")
+        st.markdown("**Visualize data in 2D using Principal Component Analysis with K-Means clustering**")
         
-        if len(courses) >= 2:
-            # Standardize the data
-            scaler = StandardScaler()
-            data_scaled = scaler.fit_transform(data_for_pca)
+        # Number of clusters selector
+        n_clusters = st.slider(
+            "Select number of clusters (K):",
+            min_value=2,
+            max_value=5,
+            value=3,
+            help="Choose how many clusters to identify in the data"
+        )
+        
+        if clustering_type == "Course Clustering (Which courses are similar?)":
+            st.markdown(f"**PCA plot of courses with {n_clusters} K-Means clusters**")
             
-            # Apply PCA
-            pca = PCA(n_components=2)
-            pca_result = pca.fit_transform(data_scaled)
+            # Prepare data: courses as observations (rows), professors as features (columns)
+            data_for_pca = course_pref_matrix.values
             
-            # Apply K-Means clustering
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(data_scaled)
-            
-            # Create DataFrame for plotting
-            pca_df = pd.DataFrame({
-                'PC1': pca_result[:, 0],
-                'PC2': pca_result[:, 1],
-                'Course': courses,
-                'Cluster': [f'Cluster {i+1}' for i in cluster_labels]
-            })
-            
-            # Create PCA scatter plot
-            fig_pca = px.scatter(
-                pca_df,
-                x='PC1',
-                y='PC2',
-                color='Cluster',
-                text='Course',
-                title=f'PCA of Courses with {n_clusters} K-Means Clusters',
-                labels={'PC1': f'PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)',
-                        'PC2': f'PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)'},
-                color_discrete_sequence=px.colors.qualitative.Set2
-            )
-            
-            fig_pca.update_traces(
-                textposition='top center',
-                marker=dict(size=12, line=dict(width=2, color='white'))
-            )
-            
-            fig_pca.update_layout(
-                height=700,
-                width=1000,
-                font=dict(size=12),
-                showlegend=True
-            )
-            
-            st.plotly_chart(fig_pca, use_container_width=True)
-            
-            # Show cluster membership
-            st.markdown("**Cluster Membership:**")
-            cluster_summary = []
-            for i in range(n_clusters):
-                cluster_courses = pca_df[pca_df['Cluster'] == f'Cluster {i+1}']['Course'].tolist()
-                cluster_summary.append({
-                    'Cluster': f'Cluster {i+1}',
-                    'Size': len(cluster_courses),
-                    'Courses': ', '.join(cluster_courses)
+            if len(courses) >= 2:
+                # Standardize the data
+                scaler = StandardScaler()
+                data_scaled = scaler.fit_transform(data_for_pca)
+                
+                # Apply PCA
+                pca = PCA(n_components=2)
+                pca_result = pca.fit_transform(data_scaled)
+                
+                # Apply K-Means clustering
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                cluster_labels = kmeans.fit_predict(data_scaled)
+                
+                # Create DataFrame for plotting
+                pca_df = pd.DataFrame({
+                    'PC1': pca_result[:, 0],
+                    'PC2': pca_result[:, 1],
+                    'Course': courses,
+                    'Cluster': [f'Cluster {i+1}' for i in cluster_labels]
                 })
-            
-            cluster_df = pd.DataFrame(cluster_summary)
-            st.dataframe(cluster_df, hide_index=True, use_container_width=True)
-            
-            # Variance explained
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("PC1 Variance Explained", f"{pca.explained_variance_ratio_[0]:.1%}")
-            with col2:
-                st.metric("PC2 Variance Explained", f"{pca.explained_variance_ratio_[1]:.1%}")
-            with col3:
-                st.metric("Total Variance Explained", f"{sum(pca.explained_variance_ratio_):.1%}")
-        else:
-            st.warning("Need at least 2 courses for PCA analysis")
-    
-    else:  # Professor clustering
-        st.markdown(f"**PCA plot of professors with {n_clusters} K-Means clusters**")
+                
+                # Create PCA scatter plot
+                fig_pca = px.scatter(
+                    pca_df,
+                    x='PC1',
+                    y='PC2',
+                    color='Cluster',
+                    text='Course',
+                    title=f'PCA of Courses with {n_clusters} K-Means Clusters',
+                    labels={'PC1': f'PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)',
+                            'PC2': f'PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)'},
+                    color_discrete_sequence=px.colors.qualitative.Set2
+                )
+                
+                fig_pca.update_traces(
+                    textposition='top center',
+                    marker=dict(size=12, line=dict(width=2, color='white'))
+                )
+                
+                fig_pca.update_layout(
+                    height=700,
+                    width=1000,
+                    font=dict(size=12),
+                    showlegend=True
+                )
+                
+                st.plotly_chart(fig_pca, use_container_width=True)
+                
+                # Show cluster membership
+                st.markdown("**Cluster Membership:**")
+                cluster_summary = []
+                for i in range(n_clusters):
+                    cluster_courses = pca_df[pca_df['Cluster'] == f'Cluster {i+1}']['Course'].tolist()
+                    cluster_summary.append({
+                        'Cluster': f'Cluster {i+1}',
+                        'Size': len(cluster_courses),
+                        'Courses': ', '.join(cluster_courses)
+                    })
+                
+                cluster_df = pd.DataFrame(cluster_summary)
+                st.dataframe(cluster_df, hide_index=True, use_container_width=True)
+                
+                # Variance explained
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("PC1 Variance Explained", f"{pca.explained_variance_ratio_[0]:.1%}")
+                with col2:
+                    st.metric("PC2 Variance Explained", f"{pca.explained_variance_ratio_[1]:.1%}")
+                with col3:
+                    st.metric("Total Variance Explained", f"{sum(pca.explained_variance_ratio_):.1%}")
+            else:
+                st.warning("Need at least 2 courses for PCA analysis")
         
-        # Prepare data: professors as observations (rows), courses as features (columns)
-        data_for_pca = course_pref_matrix.T.values
-        
-        if len(professors) >= 2:
-            # Standardize the data
-            scaler = StandardScaler()
-            data_scaled = scaler.fit_transform(data_for_pca)
+        else:  # Professor clustering
+            st.markdown(f"**PCA plot of professors with {n_clusters} K-Means clusters**")
             
-            # Apply PCA
-            pca = PCA(n_components=2)
-            pca_result = pca.fit_transform(data_scaled)
+            # Prepare data: professors as observations (rows), courses as features (columns)
+            data_for_pca = course_pref_matrix.T.values
             
-            # Apply K-Means clustering
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(data_scaled)
-            
-            # Create DataFrame for plotting
-            pca_df = pd.DataFrame({
-                'PC1': pca_result[:, 0],
-                'PC2': pca_result[:, 1],
-                'Professor': professors,
-                'Cluster': [f'Cluster {i+1}' for i in cluster_labels]
-            })
-            
-            # Create PCA scatter plot
-            fig_pca = px.scatter(
-                pca_df,
-                x='PC1',
-                y='PC2',
-                color='Cluster',
-                text='Professor',
-                title=f'PCA of Professors with {n_clusters} K-Means Clusters',
-                labels={'PC1': f'PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)',
-                        'PC2': f'PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)'},
-                color_discrete_sequence=px.colors.qualitative.Set2
-            )
-            
-            fig_pca.update_traces(
-                textposition='top center',
-                marker=dict(size=12, line=dict(width=2, color='white'))
-            )
-            
-            fig_pca.update_layout(
-                height=700,
-                width=1000,
-                font=dict(size=12),
-                showlegend=True
-            )
-            
-            st.plotly_chart(fig_pca, use_container_width=True)
-            
-            # Show cluster membership
-            st.markdown("**Cluster Membership:**")
-            cluster_summary = []
-            for i in range(n_clusters):
-                cluster_profs = pca_df[pca_df['Cluster'] == f'Cluster {i+1}']['Professor'].tolist()
-                cluster_summary.append({
-                    'Cluster': f'Cluster {i+1}',
-                    'Size': len(cluster_profs),
-                    'Professors': ', '.join(cluster_profs)
+            if len(professors) >= 2:
+                # Standardize the data
+                scaler = StandardScaler()
+                data_scaled = scaler.fit_transform(data_for_pca)
+                
+                # Apply PCA
+                pca = PCA(n_components=2)
+                pca_result = pca.fit_transform(data_scaled)
+                
+                # Apply K-Means clustering
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                cluster_labels = kmeans.fit_predict(data_scaled)
+                
+                # Create DataFrame for plotting
+                pca_df = pd.DataFrame({
+                    'PC1': pca_result[:, 0],
+                    'PC2': pca_result[:, 1],
+                    'Professor': professors,
+                    'Cluster': [f'Cluster {i+1}' for i in cluster_labels]
                 })
-            
-            cluster_df = pd.DataFrame(cluster_summary)
-            st.dataframe(cluster_df, hide_index=True, use_container_width=True)
-            
-            # Variance explained
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("PC1 Variance Explained", f"{pca.explained_variance_ratio_[0]:.1%}")
-            with col2:
-                st.metric("PC2 Variance Explained", f"{pca.explained_variance_ratio_[1]:.1%}")
-            with col3:
-                st.metric("Total Variance Explained", f"{sum(pca.explained_variance_ratio_):.1%}")
-        else:
-            st.warning("Need at least 2 professors for PCA analysis")
+                
+                # Create PCA scatter plot
+                fig_pca = px.scatter(
+                    pca_df,
+                    x='PC1',
+                    y='PC2',
+                    color='Cluster',
+                    text='Professor',
+                    title=f'PCA of Professors with {n_clusters} K-Means Clusters',
+                    labels={'PC1': f'PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)',
+                            'PC2': f'PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)'},
+                    color_discrete_sequence=px.colors.qualitative.Set2
+                )
+                
+                fig_pca.update_traces(
+                    textposition='top center',
+                    marker=dict(size=12, line=dict(width=2, color='white'))
+                )
+                
+                fig_pca.update_layout(
+                    height=700,
+                    width=1000,
+                    font=dict(size=12),
+                    showlegend=True
+                )
+                
+                st.plotly_chart(fig_pca, use_container_width=True)
+                
+                # Show cluster membership
+                st.markdown("**Cluster Membership:**")
+                cluster_summary = []
+                for i in range(n_clusters):
+                    cluster_profs = pca_df[pca_df['Cluster'] == f'Cluster {i+1}']['Professor'].tolist()
+                    cluster_summary.append({
+                        'Cluster': f'Cluster {i+1}',
+                        'Size': len(cluster_profs),
+                        'Professors': ', '.join(cluster_profs)
+                    })
+                
+                cluster_df = pd.DataFrame(cluster_summary)
+                st.dataframe(cluster_df, hide_index=True, use_container_width=True)
+                
+                # Variance explained
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("PC1 Variance Explained", f"{pca.explained_variance_ratio_[0]:.1%}")
+                with col2:
+                    st.metric("PC2 Variance Explained", f"{pca.explained_variance_ratio_[1]:.1%}")
+                with col3:
+                    st.metric("Total Variance Explained", f"{sum(pca.explained_variance_ratio_):.1%}")
+            else:
+                st.warning("Need at least 2 professors for PCA analysis")
+        
+        st.markdown("---")
+        
+    except ImportError:
+        st.info("💡 **PCA & K-Means Clustering not available**. Install scikit-learn to enable this feature: `pip install scikit-learn`")
     
-    st.markdown("---")
     st.subheader("Hierarchical Clustering Dendrograms")
     st.markdown("**View hierarchical relationships in the data**")
     
@@ -1582,3 +1587,5 @@ if __name__ == "__main__":
     main()
 
             
+2
+            """)
