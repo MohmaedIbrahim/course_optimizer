@@ -1584,5 +1584,7 @@ def create_excel_template_structured():
         return None
 
 
-   2
-            """)
+if __name__ == "__main__":
+    main()
+
+            
