@@ -1389,31 +1389,5 @@ if __name__ == "__main__":
     main()
 
             
-            st.write("**Sheet 2 - Professor Constraints:**")
-            st.code("""
-    A        B    C    D    E    F    G    H
-1           T1   T2   T3   T1   T2   T3   Total
-2           (Term Prefs) (Max Streams) Load
-3   Jonathan  9    5    7    3    2    3    5
-4   JK        6    8    4    2    3    2    4
-5   Patrick   7    6    9    3    3    3    6
-            """)
-        
-        with col2:
-            st.write("**Sheet 3 - O_jk (Course Offerings):**")
-            st.code("""
-    A       B    C    D
-1   Course  T1   T2   T3
-2   ACTL1   1    0    1
-3   ACTL2   0    1    0
-4   ACTL3   1    1    1
-            """)
-            
-            st.write("**Sheet 4 - n_jk (Course Streams):**")
-            st.code("""
-    A       B    C    D
-1   Course  T1   T2   T3
-2   ACTL1   2    0    1
-3   ACTL2   0    3    0
-4   ACTL3   1    2    2
-            """)
+
+
