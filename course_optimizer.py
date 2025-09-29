@@ -899,14 +899,71 @@ def show_clustering_analysis_step():
     except ImportError:
         st.info("Install scikit-learn to enable PCA clustering: `pip install scikit-learn`")
     
-    # Cluster Relationships
+    # Hierarchical Clustering
+    st.subheader("Hierarchical Clustering Dendrograms")
+    
+    if clustering_type == "Course Clustering (Which courses are similar?)":
+        if len(courses) >= 2:
+            linkage_matrix = linkage(course_pref_matrix.values, method='ward')
+            dendro_data = dendrogram(linkage_matrix, labels=courses, no_plot=True)
+            
+            fig_dendro = go.Figure()
+            icoord = np.array(dendro_data['icoord'])
+            dcoord = np.array(dendro_data['dcoord'])
+            
+            for i in range(len(icoord)):
+                fig_dendro.add_trace(go.Scatter(
+                    x=icoord[i], y=dcoord[i],
+                    mode='lines',
+                    line=dict(color='rgb(100,100,100)', width=1),
+                    showlegend=False
+                ))
+            
+            fig_dendro.update_layout(
+                title="Course Dendrogram",
+                xaxis=dict(tickvals=list(range(5, len(courses)*10+5, 10)),
+                          ticktext=dendro_data['ivl'], tickangle=90),
+                yaxis=dict(title="Distance"),
+                height=600
+            )
+            st.plotly_chart(fig_dendro, use_container_width=True)
+    
+    else:  # Professor clustering
+        if len(professors) >= 2:
+            linkage_matrix = linkage(course_pref_matrix.T.values, method='ward')
+            dendro_data = dendrogram(linkage_matrix, labels=professors, no_plot=True)
+            
+            fig_dendro = go.Figure()
+            icoord = np.array(dendro_data['icoord'])
+            dcoord = np.array(dendro_data['dcoord'])
+            
+            for i in range(len(icoord)):
+                fig_dendro.add_trace(go.Scatter(
+                    x=icoord[i], y=dcoord[i],
+                    mode='lines',
+                    line=dict(color='rgb(100,100,100)', width=1),
+                    showlegend=False
+                ))
+            
+            fig_dendro.update_layout(
+                title="Professor Dendrogram",
+                xaxis=dict(tickvals=list(range(5, len(professors)*10+5, 10)),
+                          ticktext=dendro_data['ivl'], tickangle=90),
+                yaxis=dict(title="Distance"),
+                height=600
+            )
+            st.plotly_chart(fig_dendro, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # Cluster Relationships at the END
     try:
         from sklearn.decomposition import PCA
         from sklearn.cluster import KMeans
         from sklearn.preprocessing import StandardScaler
-        import networkx as nx
         
         st.subheader("Cluster Relationship Analysis")
+        st.markdown("**Analyze relationships between professor clusters and course clusters**")
         
         n_clusters_analysis = st.selectbox(
             "Select number of clusters for relationship analysis:",
@@ -999,134 +1056,97 @@ def show_clustering_analysis_step():
             fig_affinity.update_layout(height=400)
             st.plotly_chart(fig_affinity, use_container_width=True)
             
-            # Bipartite Network
-            st.markdown("### Bipartite Network Graph")
+            # Sankey Diagram
+            st.markdown("### Professor ↔ Course Cluster Connections (Sankey)")
+            st.markdown("**Flow diagram showing relationships between professor and course clusters**")
             
-            G = nx.Graph()
+            # Build Sankey data
+            source_nodes = []
+            target_nodes = []
+            values = []
+            link_colors = []
             
-            prof_cluster_nodes = [f'Prof_C{i+1}' for i in range(n_clusters_analysis)]
-            course_cluster_nodes = [f'Course_C{i+1}' for i in range(n_clusters_analysis)]
+            edge_threshold = 5.0  # Only show flows with avg preference >= 5
             
-            G.add_nodes_from(prof_cluster_nodes, bipartite=0)
-            G.add_nodes_from(course_cluster_nodes, bipartite=1)
-            
-            edge_threshold = 5.0
             for p_cluster in range(n_clusters_analysis):
                 for c_cluster in range(n_clusters_analysis):
                     weight = affinity_matrix[p_cluster, c_cluster]
                     if weight >= edge_threshold:
-                        G.add_edge(f'Prof_C{p_cluster+1}', f'Course_C{c_cluster+1}', weight=weight)
+                        source_nodes.append(p_cluster)  # Professor cluster index
+                        target_nodes.append(n_clusters_analysis + c_cluster)  # Course cluster index (offset)
+                        values.append(weight)
+                        
+                        # Color based on preference strength
+                        if weight >= 8:
+                            link_colors.append('rgba(50, 205, 50, 0.4)')  # Green for high
+                        elif weight >= 6.5:
+                            link_colors.append('rgba(255, 215, 0, 0.4)')  # Yellow for medium
+                        else:
+                            link_colors.append('rgba(255, 165, 0, 0.4)')  # Orange for low
             
-            pos = {}
-            for i, node in enumerate(prof_cluster_nodes):
-                pos[node] = (0, i * 2)
-            for i, node in enumerate(course_cluster_nodes):
-                pos[node] = (3, i * 2)
+            # Node labels
+            node_labels = [f'Prof Cluster {i+1}' for i in range(n_clusters_analysis)] + \
+                         [f'Course Cluster {i+1}' for i in range(n_clusters_analysis)]
             
-            edge_trace = []
-            for edge in G.edges(data=True):
-                x0, y0 = pos[edge[0]]
-                x1, y1 = pos[edge[1]]
-                weight = edge[2]['weight']
-                
-                edge_trace.append(go.Scatter(
-                    x=[x0, x1, None], y=[y0, y1, None],
-                    mode='lines',
-                    line=dict(width=weight/2, color='rgba(125,125,125,0.5)'),
-                    hoverinfo='text',
-                    text=f'Avg Pref: {weight:.2f}',
-                    showlegend=False
-                ))
+            # Node colors
+            node_colors = ['lightblue'] * n_clusters_analysis + ['lightcoral'] * n_clusters_analysis
             
-            prof_node_trace = go.Scatter(
-                x=[pos[node][0] for node in prof_cluster_nodes],
-                y=[pos[node][1] for node in prof_cluster_nodes],
-                mode='markers+text',
-                marker=dict(size=30, color='lightblue', line=dict(width=2, color='darkblue')),
-                text=prof_cluster_nodes,
-                textposition='middle left',
-                name='Professor Clusters'
+            fig_sankey = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="black", width=0.5),
+                    label=node_labels,
+                    color=node_colors,
+                    customdata=[f"<br>Members: {', '.join([p for p, c in prof_to_cluster.items() if c == i])}" 
+                               if i < n_clusters_analysis 
+                               else f"<br>Members: {', '.join([co for co, cl in course_to_cluster.items() if cl == i-n_clusters_analysis])}"
+                               for i in range(len(node_labels))],
+                    hovertemplate='%{label}<br>%{customdata}<extra></extra>'
+                ),
+                link=dict(
+                    source=source_nodes,
+                    target=target_nodes,
+                    value=values,
+                    color=link_colors,
+                    customdata=[f'Avg Preference: {v:.2f}' for v in values],
+                    hovertemplate='%{source.label} → %{target.label}<br>%{customdata}<extra></extra>'
+                )
+            )])
+            
+            fig_sankey.update_layout(
+                title=f"Professor-Course Cluster Flow (Threshold ≥ {edge_threshold})",
+                font=dict(size=12),
+                height=600
             )
             
-            course_node_trace = go.Scatter(
-                x=[pos[node][0] for node in course_cluster_nodes],
-                y=[pos[node][1] for node in course_cluster_nodes],
-                mode='markers+text',
-                marker=dict(size=30, color='lightcoral', line=dict(width=2, color='darkred')),
-                text=course_cluster_nodes,
-                textposition='middle right',
-                name='Course Clusters'
-            )
+            st.plotly_chart(fig_sankey, use_container_width=True)
             
-            fig_network = go.Figure(data=edge_trace + [prof_node_trace, course_node_trace])
-            fig_network.update_layout(
-                title='Bipartite Network: Professor Clusters ↔ Course Clusters',
-                height=600,
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
-            )
+            st.info(f"📊 Sankey diagram shows flows where average preference ≥ {edge_threshold}. Flow thickness represents preference strength. Green = High (≥8), Yellow = Medium (≥6.5), Orange = Moderate.")
             
-            st.plotly_chart(fig_network, use_container_width=True)
-        
-        st.markdown("---")
+            # Summary table
+            st.markdown("### Strongest Cluster Relationships")
+            relationships = []
+            for p_cluster in range(n_clusters_analysis):
+                for c_cluster in range(n_clusters_analysis):
+                    avg_pref = affinity_matrix[p_cluster, c_cluster]
+                    if avg_pref > 0:
+                        prof_members = [p for p, c in prof_to_cluster.items() if c == p_cluster]
+                        course_members = [co for co, cl in course_to_cluster.items() if cl == c_cluster]
+                        relationships.append({
+                            'Professor Cluster': f'P{p_cluster+1}',
+                            'Course Cluster': f'C{c_cluster+1}',
+                            'Avg Preference': f'{avg_pref:.2f}',
+                            'Professors': ', '.join(prof_members),
+                            'Courses': ', '.join(course_members)
+                        })
+            
+            relationships_df = pd.DataFrame(relationships)
+            relationships_df = relationships_df.sort_values('Avg Preference', ascending=False)
+            st.dataframe(relationships_df, hide_index=True, use_container_width=True)
         
     except ImportError:
-        st.info("Install scikit-learn and networkx for full clustering features")
-    
-    # Hierarchical Clustering
-    st.subheader("Hierarchical Clustering Dendrograms")
-    
-    if clustering_type == "Course Clustering (Which courses are similar?)":
-        if len(courses) >= 2:
-            linkage_matrix = linkage(course_pref_matrix.values, method='ward')
-            dendro_data = dendrogram(linkage_matrix, labels=courses, no_plot=True)
-            
-            fig_dendro = go.Figure()
-            icoord = np.array(dendro_data['icoord'])
-            dcoord = np.array(dendro_data['dcoord'])
-            
-            for i in range(len(icoord)):
-                fig_dendro.add_trace(go.Scatter(
-                    x=icoord[i], y=dcoord[i],
-                    mode='lines',
-                    line=dict(color='rgb(100,100,100)', width=1),
-                    showlegend=False
-                ))
-            
-            fig_dendro.update_layout(
-                title="Course Dendrogram",
-                xaxis=dict(tickvals=list(range(5, len(courses)*10+5, 10)),
-                          ticktext=dendro_data['ivl'], tickangle=90),
-                yaxis=dict(title="Distance"),
-                height=600
-            )
-            st.plotly_chart(fig_dendro, use_container_width=True)
-    
-    else:  # Professor clustering
-        if len(professors) >= 2:
-            linkage_matrix = linkage(course_pref_matrix.T.values, method='ward')
-            dendro_data = dendrogram(linkage_matrix, labels=professors, no_plot=True)
-            
-            fig_dendro = go.Figure()
-            icoord = np.array(dendro_data['icoord'])
-            dcoord = np.array(dendro_data['dcoord'])
-            
-            for i in range(len(icoord)):
-                fig_dendro.add_trace(go.Scatter(
-                    x=icoord[i], y=dcoord[i],
-                    mode='lines',
-                    line=dict(color='rgb(100,100,100)', width=1),
-                    showlegend=False
-                ))
-            
-            fig_dendro.update_layout(
-                title="Professor Dendrogram",
-                xaxis=dict(tickvals=list(range(5, len(professors)*10+5, 10)),
-                          ticktext=dendro_data['ivl'], tickangle=90),
-                yaxis=dict(title="Distance"),
-                height=600
-            )
-            st.plotly_chart(fig_dendro, use_container_width=True)
+        st.info("Install scikit-learn for full clustering features: `pip install scikit-learn`")
     
     # Navigation
     col1, col2 = st.columns(2)
