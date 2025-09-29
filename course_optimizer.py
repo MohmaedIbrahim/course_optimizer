@@ -894,7 +894,216 @@ def show_clustering_analysis_step():
                     })
                 st.dataframe(pd.DataFrame(cluster_summary), hide_index=True, use_container_width=True)
         
-        st.markdown("---")
+        # Add this section after the main Sankey diagram in show_clustering_analysis_step()
+
+# Individual Professor Sankey Diagrams
+st.markdown("---")
+st.subheader("Individual Professor → Course Cluster Connections")
+st.markdown("**Select a professor to see their preferences mapped to course clusters**")
+
+selected_professor = st.selectbox(
+    "Select Professor:",
+    professors,
+    key="individual_prof_sankey"
+)
+
+if selected_professor:
+    # Get professor's cluster
+    prof_cluster = prof_to_cluster[selected_professor]
+    
+    # Build Sankey data for this professor
+    prof_source_nodes = []
+    prof_target_nodes = []
+    prof_values = []
+    prof_link_colors = []
+    
+    for c_cluster in range(n_clusters_analysis):
+        # Calculate average preference for this professor to this course cluster
+        courses_in_cluster = [co for co, cl in course_to_cluster.items() if cl == c_cluster]
+        
+        if courses_in_cluster:
+            avg_pref = sum(course_pref_matrix.loc[course, selected_professor] 
+                          for course in courses_in_cluster) / len(courses_in_cluster)
+            
+            if avg_pref >= edge_threshold:
+                prof_source_nodes.append(0)  # Professor (single source)
+                prof_target_nodes.append(1 + c_cluster)  # Course cluster (offset by 1)
+                prof_values.append(float(avg_pref))
+                
+                # Color based on preference
+                if avg_pref >= 8:
+                    prof_link_colors.append('rgba(50, 205, 50, 0.5)')
+                elif avg_pref >= 6.5:
+                    prof_link_colors.append('rgba(255, 215, 0, 0.5)')
+                else:
+                    prof_link_colors.append('rgba(255, 140, 0, 0.5)')
+    
+    if len(prof_source_nodes) > 0:
+        # Node labels
+        prof_node_labels = [f'{selected_professor}\n(Prof C{prof_cluster+1})'] + \
+                          [f'Course C{i+1}' for i in range(n_clusters_analysis)]
+        
+        prof_node_colors = ['rgba(173, 216, 230, 0.8)'] + \
+                          ['rgba(240, 128, 128, 0.8)'] * n_clusters_analysis
+        
+        # Create hover text
+        prof_node_hover = [f'{selected_professor}<br>Professor Cluster {prof_cluster+1}']
+        for i in range(n_clusters_analysis):
+            course_members = [co for co, cl in course_to_cluster.items() if cl == i]
+            prof_node_hover.append(f"Course Cluster {i+1}<br>Members: {', '.join(course_members)}")
+        
+        fig_prof_sankey = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=20,
+                thickness=25,
+                line=dict(color="black", width=1),
+                label=prof_node_labels,
+                color=prof_node_colors,
+                customdata=prof_node_hover,
+                hovertemplate='%{customdata}<extra></extra>'
+            ),
+            link=dict(
+                source=prof_source_nodes,
+                target=prof_target_nodes,
+                value=prof_values,
+                color=prof_link_colors,
+                hovertemplate='%{source.label} → %{target.label}<br>Avg Preference: %{value:.2f}<extra></extra>'
+            )
+        )])
+        
+        fig_prof_sankey.update_layout(
+            title=f"{selected_professor}'s Preference Flow to Course Clusters",
+            font=dict(size=13),
+            height=400,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig_prof_sankey, use_container_width=True)
+        
+        # Show detailed breakdown
+        with st.expander("Show detailed preferences"):
+            detail_data = []
+            for c_cluster in range(n_clusters_analysis):
+                courses_in_cluster = [co for co, cl in course_to_cluster.items() if cl == c_cluster]
+                for course in courses_in_cluster:
+                    pref = course_pref_matrix.loc[course, selected_professor]
+                    detail_data.append({
+                        'Course Cluster': f'C{c_cluster+1}',
+                        'Course': course,
+                        'Preference': f'{pref:.1f}'
+                    })
+            
+            detail_df = pd.DataFrame(detail_data)
+            detail_df = detail_df.sort_values('Preference', ascending=False)
+            st.dataframe(detail_df, hide_index=True, use_container_width=True)
+    else:
+        st.warning(f"No connections found for {selected_professor} with threshold ≥ {edge_threshold}")
+
+# Individual Course Sankey Diagrams
+st.markdown("---")
+st.subheader("Professor Cluster → Individual Course Connections")
+st.markdown("**Select a course to see which professor clusters prefer it**")
+
+selected_course = st.selectbox(
+    "Select Course:",
+    courses,
+    key="individual_course_sankey"
+)
+
+if selected_course:
+    # Get course's cluster
+    course_cluster = course_to_cluster[selected_course]
+    
+    # Build Sankey data for this course
+    course_source_nodes = []
+    course_target_nodes = []
+    course_values = []
+    course_link_colors = []
+    
+    for p_cluster in range(n_clusters_analysis):
+        # Calculate average preference for this course from this professor cluster
+        profs_in_cluster = [p for p, c in prof_to_cluster.items() if c == p_cluster]
+        
+        if profs_in_cluster:
+            avg_pref = sum(course_pref_matrix.loc[selected_course, prof] 
+                          for prof in profs_in_cluster) / len(profs_in_cluster)
+            
+            if avg_pref >= edge_threshold:
+                course_source_nodes.append(p_cluster)  # Professor cluster
+                course_target_nodes.append(n_clusters_analysis)  # Course (single target, offset)
+                course_values.append(float(avg_pref))
+                
+                # Color based on preference
+                if avg_pref >= 8:
+                    course_link_colors.append('rgba(50, 205, 50, 0.5)')
+                elif avg_pref >= 6.5:
+                    course_link_colors.append('rgba(255, 215, 0, 0.5)')
+                else:
+                    course_link_colors.append('rgba(255, 140, 0, 0.5)')
+    
+    if len(course_source_nodes) > 0:
+        # Node labels
+        course_node_labels = [f'Prof C{i+1}' for i in range(n_clusters_analysis)] + \
+                            [f'{selected_course}\n(Course C{course_cluster+1})']
+        
+        course_node_colors = ['rgba(173, 216, 230, 0.8)'] * n_clusters_analysis + \
+                            ['rgba(240, 128, 128, 0.8)']
+        
+        # Create hover text
+        course_node_hover = []
+        for i in range(n_clusters_analysis):
+            prof_members = [p for p, c in prof_to_cluster.items() if c == i]
+            course_node_hover.append(f"Prof Cluster {i+1}<br>Members: {', '.join(prof_members)}")
+        course_node_hover.append(f'{selected_course}<br>Course Cluster {course_cluster+1}')
+        
+        fig_course_sankey = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=20,
+                thickness=25,
+                line=dict(color="black", width=1),
+                label=course_node_labels,
+                color=course_node_colors,
+                customdata=course_node_hover,
+                hovertemplate='%{customdata}<extra></extra>'
+            ),
+            link=dict(
+                source=course_source_nodes,
+                target=course_target_nodes,
+                value=course_values,
+                color=course_link_colors,
+                hovertemplate='%{source.label} → %{target.label}<br>Avg Preference: %{value:.2f}<extra></extra>'
+            )
+        )])
+        
+        fig_course_sankey.update_layout(
+            title=f"Professor Cluster Preferences for {selected_course}",
+            font=dict(size=13),
+            height=400,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig_course_sankey, use_container_width=True)
+        
+        # Show detailed breakdown
+        with st.expander("Show detailed preferences"):
+            detail_data = []
+            for p_cluster in range(n_clusters_analysis):
+                profs_in_cluster = [p for p, c in prof_to_cluster.items() if c == p_cluster]
+                for prof in profs_in_cluster:
+                    pref = course_pref_matrix.loc[selected_course, prof]
+                    detail_data.append({
+                        'Professor Cluster': f'P{p_cluster+1}',
+                        'Professor': prof,
+                        'Preference': f'{pref:.1f}'
+                    })
+            
+            detail_df = pd.DataFrame(detail_data)
+            detail_df = detail_df.sort_values('Preference', ascending=False)
+            st.dataframe(detail_df, hide_index=True, use_container_width=True)
+    else:
+        st.warning(f"No connections found for {selected_course} with threshold ≥ {edge_threshold}")
         
     except ImportError:
         st.info("Install scikit-learn to enable PCA clustering: `pip install scikit-learn`")
@@ -2452,5 +2661,6 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
 
 
