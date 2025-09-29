@@ -1060,13 +1060,21 @@ def show_clustering_analysis_step():
             st.markdown("### Professor ↔ Course Cluster Connections (Sankey)")
             st.markdown("**Flow diagram showing relationships between professor and course clusters**")
             
+            # Adjustable threshold
+            edge_threshold = st.slider(
+                "Minimum average preference to display:",
+                min_value=0.0,
+                max_value=10.0,
+                value=4.0,
+                step=0.5,
+                help="Only show connections with average preference above this threshold"
+            )
+            
             # Build Sankey data
             source_nodes = []
             target_nodes = []
             values = []
             link_colors = []
-            
-            edge_threshold = 5.0  # Only show flows with avg preference >= 5
             
             for p_cluster in range(n_clusters_analysis):
                 for c_cluster in range(n_clusters_analysis):
@@ -1074,55 +1082,68 @@ def show_clustering_analysis_step():
                     if weight >= edge_threshold:
                         source_nodes.append(p_cluster)  # Professor cluster index
                         target_nodes.append(n_clusters_analysis + c_cluster)  # Course cluster index (offset)
-                        values.append(weight)
+                        values.append(float(weight))  # Ensure float
                         
                         # Color based on preference strength
                         if weight >= 8:
-                            link_colors.append('rgba(50, 205, 50, 0.4)')  # Green for high
+                            link_colors.append('rgba(50, 205, 50, 0.5)')  # Green for high
                         elif weight >= 6.5:
-                            link_colors.append('rgba(255, 215, 0, 0.4)')  # Yellow for medium
+                            link_colors.append('rgba(255, 215, 0, 0.5)')  # Yellow for medium
                         else:
-                            link_colors.append('rgba(255, 165, 0, 0.4)')  # Orange for low
+                            link_colors.append('rgba(255, 140, 0, 0.5)')  # Orange for moderate
             
-            # Node labels
-            node_labels = [f'Prof Cluster {i+1}' for i in range(n_clusters_analysis)] + \
-                         [f'Course Cluster {i+1}' for i in range(n_clusters_analysis)]
-            
-            # Node colors
-            node_colors = ['lightblue'] * n_clusters_analysis + ['lightcoral'] * n_clusters_analysis
-            
-            fig_sankey = go.Figure(data=[go.Sankey(
-                node=dict(
-                    pad=15,
-                    thickness=20,
-                    line=dict(color="black", width=0.5),
-                    label=node_labels,
-                    color=node_colors,
-                    customdata=[f"<br>Members: {', '.join([p for p, c in prof_to_cluster.items() if c == i])}" 
-                               if i < n_clusters_analysis 
-                               else f"<br>Members: {', '.join([co for co, cl in course_to_cluster.items() if cl == i-n_clusters_analysis])}"
-                               for i in range(len(node_labels))],
-                    hovertemplate='%{label}<br>%{customdata}<extra></extra>'
-                ),
-                link=dict(
-                    source=source_nodes,
-                    target=target_nodes,
-                    value=values,
-                    color=link_colors,
-                    customdata=[f'Avg Preference: {v:.2f}' for v in values],
-                    hovertemplate='%{source.label} → %{target.label}<br>%{customdata}<extra></extra>'
+            if len(source_nodes) > 0:
+                # Node labels
+                node_labels = [f'Prof C{i+1}' for i in range(n_clusters_analysis)] + \
+                             [f'Course C{i+1}' for i in range(n_clusters_analysis)]
+                
+                # Node colors
+                node_colors = ['rgba(173, 216, 230, 0.8)'] * n_clusters_analysis + \
+                             ['rgba(240, 128, 128, 0.8)'] * n_clusters_analysis
+                
+                # Create hover text for nodes
+                node_hover = []
+                for i in range(n_clusters_analysis):
+                    prof_members = [p for p, c in prof_to_cluster.items() if c == i]
+                    node_hover.append(f"Prof Cluster {i+1}<br>Members: {', '.join(prof_members)}")
+                
+                for i in range(n_clusters_analysis):
+                    course_members = [co for co, cl in course_to_cluster.items() if cl == i]
+                    node_hover.append(f"Course Cluster {i+1}<br>Members: {', '.join(course_members)}")
+                
+                fig_sankey = go.Figure(data=[go.Sankey(
+                    node=dict(
+                        pad=20,
+                        thickness=25,
+                        line=dict(color="black", width=1),
+                        label=node_labels,
+                        color=node_colors,
+                        customdata=node_hover,
+                        hovertemplate='%{customdata}<extra></extra>'
+                    ),
+                    link=dict(
+                        source=source_nodes,
+                        target=target_nodes,
+                        value=values,
+                        color=link_colors,
+                        hovertemplate='%{source.label} → %{target.label}<br>Avg Preference: %{value:.2f}<extra></extra>'
+                    )
+                )])
+                
+                fig_sankey.update_layout(
+                    title=f"Professor-Course Cluster Flow (Threshold ≥ {edge_threshold})",
+                    font=dict(size=13),
+                    height=max(500, n_clusters_analysis * 80),
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
                 )
-            )])
-            
-            fig_sankey.update_layout(
-                title=f"Professor-Course Cluster Flow (Threshold ≥ {edge_threshold})",
-                font=dict(size=12),
-                height=600
-            )
-            
-            st.plotly_chart(fig_sankey, use_container_width=True)
-            
-            st.info(f"📊 Sankey diagram shows flows where average preference ≥ {edge_threshold}. Flow thickness represents preference strength. Green = High (≥8), Yellow = Medium (≥6.5), Orange = Moderate.")
+                
+                st.plotly_chart(fig_sankey, use_container_width=True)
+                
+                st.success(f"✓ Showing {len(source_nodes)} connections. Flow thickness = preference strength. Green=High (≥8), Yellow=Medium (≥6.5), Orange=Moderate")
+            else:
+                st.warning(f"⚠️ No connections found with average preference ≥ {edge_threshold}. Try lowering the threshold slider above.")
+                st.info(f"**Tip**: The affinity matrix above shows all preference values. Adjust the slider to see connections.")
             
             # Summary table
             st.markdown("### Strongest Cluster Relationships")
@@ -1254,4 +1275,3 @@ def show_results_step():
 
 if __name__ == "__main__":
     main()
-
