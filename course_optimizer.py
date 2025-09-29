@@ -1035,12 +1035,11 @@ def show_data_analysis_step():
         st.subheader("PCA & K-Means Clustering Visualization")
         st.markdown("**Visualize data in 2D using Principal Component Analysis with K-Means clustering**")
         
-        # Number of clusters selector
-        n_clusters = st.slider(
+        # Number of clusters selector - using selectbox for open list
+        n_clusters = st.selectbox(
             "Select number of clusters (K):",
-            min_value=2,
-            max_value=5,
-            value=3,
+            options=[2, 3, 4, 5],
+            index=1,  # Default to 3 clusters
             help="Choose how many clusters to identify in the data"
         )
         
