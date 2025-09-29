@@ -1206,6 +1206,155 @@ def show_data_analysis_step():
     except ImportError:
         st.info("💡 **PCA & K-Means Clustering not available**. Install scikit-learn to enable this feature: `pip install scikit-learn`")
     
+    # Cross-Cluster Analysis - Professor Clusters vs Course Clusters
+    try:
+        from sklearn.cluster import KMeans
+        from sklearn.preprocessing import StandardScaler
+        
+        st.subheader("Cross-Cluster Analysis: Professor Clusters ↔ Course Clusters")
+        st.markdown("**See which professor groups prefer which course groups**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            n_prof_clusters = st.selectbox(
+                "Professor Clusters:",
+                options=[2, 3, 4, 5],
+                index=1,
+                key="prof_cross_clusters"
+            )
+        with col2:
+            n_course_clusters = st.selectbox(
+                "Course Clusters:",
+                options=[2, 3, 4, 5],
+                index=1,
+                key="course_cross_clusters"
+            )
+        
+        if len(professors) >= 2 and len(courses) >= 2:
+            # Cluster professors
+            prof_data = course_pref_matrix.T.values
+            scaler_prof = StandardScaler()
+            prof_scaled = scaler_prof.fit_transform(prof_data)
+            kmeans_prof = KMeans(n_clusters=n_prof_clusters, random_state=42, n_init=10)
+            prof_cluster_labels = kmeans_prof.fit_predict(prof_scaled)
+            
+            # Cluster courses
+            course_data = course_pref_matrix.values
+            scaler_course = StandardScaler()
+            course_scaled = scaler_course.fit_transform(course_data)
+            kmeans_course = KMeans(n_clusters=n_course_clusters, random_state=42, n_init=10)
+            course_cluster_labels = kmeans_course.fit_predict(course_scaled)
+            
+            # Create cluster mappings
+            prof_cluster_map = {prof: f"Prof-Cluster {prof_cluster_labels[i]+1}" 
+                               for i, prof in enumerate(professors)}
+            course_cluster_map = {course: f"Course-Cluster {course_cluster_labels[i]+1}" 
+                                 for i, course in enumerate(courses)}
+            
+            # Calculate average preferences between professor clusters and course clusters
+            cross_cluster_matrix = pd.DataFrame(
+                index=[f"Prof-Cluster {i+1}" for i in range(n_prof_clusters)],
+                columns=[f"Course-Cluster {i+1}" for i in range(n_course_clusters)],
+                dtype=float
+            )
+            
+            for i in range(n_prof_clusters):
+                profs_in_cluster = [p for p, label in zip(professors, prof_cluster_labels) if label == i]
+                for j in range(n_course_clusters):
+                    courses_in_cluster = [c for c, label in zip(courses, course_cluster_labels) if label == j]
+                    
+                    # Calculate average preference
+                    preferences = []
+                    for p in profs_in_cluster:
+                        for c in courses_in_cluster:
+                            pref_value = course_pref_matrix.loc[c, p]
+                            preferences.append(pref_value)
+                    
+                    if preferences:
+                        cross_cluster_matrix.iloc[i, j] = np.mean(preferences)
+                    else:
+                        cross_cluster_matrix.iloc[i, j] = 0
+            
+            # Create heatmap
+            fig_cross = px.imshow(
+                cross_cluster_matrix.values,
+                labels=dict(x="Course Clusters", y="Professor Clusters", color="Avg Preference"),
+                x=cross_cluster_matrix.columns.tolist(),
+                y=cross_cluster_matrix.index.tolist(),
+                color_continuous_scale="RdYlGn",
+                range_color=[0, 10],
+                title="Cross-Cluster Preference Heatmap",
+                aspect="auto",
+                text_auto=".1f"
+            )
+            
+            fig_cross.update_layout(
+                height=400 + (n_prof_clusters * 40),
+                width=600 + (n_course_clusters * 60),
+                font=dict(size=12)
+            )
+            
+            st.plotly_chart(fig_cross, use_container_width=True)
+            
+            # Show cluster memberships side by side
+            st.markdown("**Cluster Memberships:**")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Professor Clusters:**")
+                prof_cluster_summary = []
+                for i in range(n_prof_clusters):
+                    cluster_profs = [p for p, label in zip(professors, prof_cluster_labels) if label == i]
+                    prof_cluster_summary.append({
+                        'Cluster': f'Prof-Cluster {i+1}',
+                        'Size': len(cluster_profs),
+                        'Members': ', '.join(cluster_profs)
+                    })
+                prof_cluster_df = pd.DataFrame(prof_cluster_summary)
+                st.dataframe(prof_cluster_df, hide_index=True, use_container_width=True)
+            
+            with col2:
+                st.markdown("**Course Clusters:**")
+                course_cluster_summary = []
+                for i in range(n_course_clusters):
+                    cluster_courses = [c for c, label in zip(courses, course_cluster_labels) if label == i]
+                    course_cluster_summary.append({
+                        'Cluster': f'Course-Cluster {i+1}',
+                        'Size': len(cluster_courses),
+                        'Members': ', '.join(cluster_courses)
+                    })
+                course_cluster_df = pd.DataFrame(course_cluster_summary)
+                st.dataframe(course_cluster_df, hide_index=True, use_container_width=True)
+            
+            # Insights
+            st.markdown("**Key Insights:**")
+            
+            # Find strongest and weakest relationships
+            max_val = cross_cluster_matrix.max().max()
+            min_val = cross_cluster_matrix.min().min()
+            
+            max_indices = np.where(cross_cluster_matrix.values == max_val)
+            min_indices = np.where(cross_cluster_matrix.values == min_val)
+            
+            if len(max_indices[0]) > 0:
+                max_prof_cluster = cross_cluster_matrix.index[max_indices[0][0]]
+                max_course_cluster = cross_cluster_matrix.columns[max_indices[1][0]]
+                st.success(f"**Strongest Match**: {max_prof_cluster} ↔ {max_course_cluster} (Avg Preference: {max_val:.1f}/10)")
+            
+            if len(min_indices[0]) > 0:
+                min_prof_cluster = cross_cluster_matrix.index[min_indices[0][0]]
+                min_course_cluster = cross_cluster_matrix.columns[min_indices[1][0]]
+                st.warning(f"**Weakest Match**: {min_prof_cluster} ↔ {min_course_cluster} (Avg Preference: {min_val:.1f}/10)")
+            
+        else:
+            st.warning("Need at least 2 professors and 2 courses for cross-cluster analysis")
+        
+        st.markdown("---")
+        
+    except ImportError:
+        pass  # sklearn not available, skip this section
+    
     st.subheader("Hierarchical Clustering Dendrograms")
     st.markdown("**View hierarchical relationships in the data**")
     
