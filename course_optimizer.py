@@ -1,4 +1,387 @@
-import streamlit as st
+fig_clustered.update_layout(
+                height=max(800, len(courses) * 20),
+                width=max(1200, len(professors) * 40),
+                font=dict(size=10),
+                xaxis=dict(tickangle=90, title="Staff Members"),
+                yaxis=dict(
+                    title="Courses (Clustered Order)",
+                    tickmode='array',
+                    tickvals=list(range(len(course_order))),
+                    ticktext=course_order,
+                    tickfont=dict(size=9)
+                )
+            )
+            
+            st.plotly_chart(fig_clustered, use_container_width=True)
+    
+    else:  # Professor Clustering
+        st.markdown("**Clusters professors based on their course preference patterns**")
+        
+        # For clustering professors, we need professors as observations (rows)
+        # Transpose so professors are rows
+        prof_matrix_for_clustering = course_pref_matrix.T  # Now professors are rows
+        
+        # Check if we have enough professors for clustering
+        if len(professors) < 2:
+            st.warning("Need at least 2 professors for clustering analysis")
+        else:
+            # Calculate linkage using professor matrix
+            linkage_matrix = linkage(prof_matrix_for_clustering.values, method='ward')
+            
+            fig_dendro_prof = go.Figure()
+            
+            dendro_data_prof = dendrogram(linkage_matrix, labels=professors, no_plot=True)
+            
+            icoord = np.array(dendro_data_prof['icoord'])
+            dcoord = np.array(dendro_data_prof['dcoord'])
+            
+            for i in range(len(icoord)):
+                fig_dendro_prof.add_trace(go.Scatter(
+                    x=icoord[i],
+                    y=dcoord[i],
+                    mode='lines',
+                    line=dict(color='rgb(100,100,100)', width=1),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            fig_dendro_prof.update_layout(
+                title="Professor Dendrogram - Hierarchical Clustering",
+                xaxis=dict(
+                    title="Professors",
+                    tickvals=list(range(5, len(professors)*10+5, 10)),
+                    ticktext=dendro_data_prof['ivl'],
+                    tickangle=90
+                ),
+                yaxis=dict(title="Distance (Ward Linkage)"),
+                height=600,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_dendro_prof, use_container_width=True)
+            
+            st.markdown("**Clustered Heatmap (Professors reordered by similarity)**")
+            
+            prof_order = [professors[i] for i in dendro_data_prof['leaves']]
+            clustered_matrix_prof = course_pref_matrix.loc[:, prof_order]
+            
+            fig_clustered_prof = px.imshow(
+                clustered_matrix_prof.values,
+                labels=dict(x="Professor", y="Course", color="Preference Score"),
+                x=clustered_matrix_prof.columns.tolist(),
+                y=clustered_matrix_prof.index.tolist(),
+                color_continuous_scale="RdYlGn",
+                range_color=[0, 10],
+                title="Clustered Course Preferences (Professors Reordered)",
+                aspect="auto",
+                text_auto=True
+            )
+            
+            fig_clustered_prof.update_layout(
+                height=max(800, len(courses) * 20),
+                width=max(1200, len(prof_order) * 40),
+                font=dict(size=10),
+                xaxis=dict(
+                    tickangle=90, 
+                    title="Staff Members (Clustered Order)",
+                    tickmode='array',
+                    tickvals=list(range(len(prof_order))),
+                    ticktext=prof_order
+                ),
+                yaxis=dict(
+                    title="Courses",
+                    tickmode='array',
+                    tickvals=list(range(len(courses))),
+                    ticktext=courses,
+                    tickfont=dict(size=9)
+                )
+            )
+            
+            st.plotly_chart(fig_clustered_prof, use_container_width=True)
+    
+    # Navigation buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("← Back to Data Analysis"):
+            st.session_state.step = 2
+            st.rerun()
+    
+    with col2:
+        if st.button("Run Optimization →", type="primary"):
+            # Determine next step based on input method
+            if 'course_offerings' in st.session_state:
+                # Excel upload path - go directly to optimization
+                st.session_state.step = 4
+            else:
+                # Manual input path - this shouldn't happen, but handle gracefully
+                st.session_state.step = 5
+            st.rerun()
+
+
+def show_data_analysis_step():
+    """Show data analysis and statistics before optimization."""
+    st.header("Step 2: Data Analysis & Statistics")
+    
+    courses = st.session_state.courses
+    professors = st.session_state.professors
+    terms = st.session_state.terms
+    course_preferences = st.session_state.course_preferences
+    term_preferences = st.session_state.term_preferences
+    professor_term_limits = st.session_state.professor_term_limits
+    professor_total_load = st.session_state.professor_total_load
+    course_offerings = st.session_state.course_offerings
+    course_streams = st.session_state.course_streams
+    
+    st.subheader("Data Overview")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Courses", len(courses))
+    with col2:
+        st.metric("Professors", len(professors))
+    with col3:
+        offerings_count = sum(course_offerings.values())
+        st.metric("Total Offerings", offerings_count)
+    with col4:
+        total_streams = sum(course_streams.values())
+        st.metric("Total Streams", total_streams)
+    
+    st.subheader("Course Preferences Heatmap (c_ij)")
+    st.markdown("**Scale: 0 = Cannot teach, 10 = Strongly prefer**")
+    
+    course_pref_matrix = pd.DataFrame(index=courses, columns=professors, dtype=float)
+    
+    for course in courses:
+        for prof in professors:
+            pref_value = course_preferences.get((course, prof), 0)
+            course_pref_matrix.loc[course, prof] = pref_value
+    
+    fig1 = px.imshow(
+        course_pref_matrix.values,
+        labels=dict(x="Professor", y="Course", color="Preference Score"),
+        x=course_pref_matrix.columns.tolist(),
+        y=course_pref_matrix.index.tolist(),
+        color_continuous_scale="RdYlGn",
+        range_color=[0, 10],
+        title="Course Preferences Matrix - All Courses vs All Staff",
+        aspect="auto",
+        text_auto=True
+    )
+    
+    fig1.update_layout(
+        height=max(800, len(courses) * 20),
+        width=max(1200, len(professors) * 40),
+        font=dict(size=10),
+        xaxis=dict(tickangle=90, title="Staff Members"),
+        yaxis=dict(
+            title="Courses",
+            tickmode='array',
+            tickvals=list(range(len(courses))),
+            ticktext=courses,
+            tickfont=dict(size=9)
+        )
+    )
+    
+    st.plotly_chart(fig1, use_container_width=True)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        avg_pref = course_pref_matrix.mean().mean()
+        st.metric("Average Preference", f"{avg_pref:.2f}")
+    with col2:
+        high_prefs = (course_pref_matrix >= 8).sum().sum()
+        st.metric("High Preferences (≥8)", high_prefs)
+    with col3:
+        pref_range = f"{course_pref_matrix.min().min():.0f} - {course_pref_matrix.max().max():.0f}"
+        st.metric("Preference Range", pref_range)
+    
+    st.subheader("Course Preference Analysis")array',
+                    tickvals=list(range(len(course_order))),
+                    ticktext=course_order,
+                    tickfont=dict(size=9)
+                )
+            )
+            
+            st.plotly_chart(fig_clustered, use_container_width=True)
+    
+    else:  # Professor Clustering
+        st.markdown("**Clusters professors based on their course preference patterns**")
+        
+        # For clustering professors, we need professors as observations (rows)
+        # Transpose so professors are rows
+        prof_matrix_for_clustering = course_pref_matrix.T  # Now professors are rows
+        
+        # Check if we have enough professors for clustering
+        if len(professors) < 2:
+            st.warning("Need at least 2 professors for clustering analysis")
+        else:
+            # Calculate linkage using professor matrix
+            linkage_matrix = linkage(prof_matrix_for_clustering.values, method='ward')
+            
+            fig_dendro_prof = go.Figure()
+            
+            dendro_data_prof = dendrogram(linkage_matrix, labels=professors, no_plot=True)
+            
+            icoord = np.array(dendro_data_prof['icoord'])
+            dcoord = np.array(dendro_data_prof['dcoord'])
+            
+            for i in range(len(icoord)):
+                fig_dendro_prof.add_trace(go.Scatter(
+                    x=icoord[i],
+                    y=dcoord[i],
+                    mode='lines',
+                    line=dict(color='rgb(100,100,100)', width=1),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            fig_dendro_prof.update_layout(
+                title="Professor Dendrogram - Hierarchical Clustering",
+                xaxis=dict(
+                    title="Professors",
+                    tickvals=list(range(5, len(professors)*10+5, 10)),
+                    ticktext=dendro_data_prof['ivl'],
+                    tickangle=90
+                ),
+                yaxis=dict(title="Distance (Ward Linkage)"),
+                height=600,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_dendro_prof, use_container_width=True)
+            
+            st.markdown("**Clustered Heatmap (Professors reordered by similarity)**")
+            
+            prof_order = [professors[i] for i in dendro_data_prof['leaves']]
+            clustered_matrix_prof = course_pref_matrix.loc[:, prof_order]
+            
+            fig_clustered_prof = px.imshow(
+                clustered_matrix_prof.values,
+                labels=dict(x="Professor", y="Course", color="Preference Score"),
+                x=clustered_matrix_prof.columns.tolist(),
+                y=clustered_matrix_prof.index.tolist(),
+                color_continuous_scale="RdYlGn",
+                range_color=[0, 10],
+                title="Clustered Course Preferences (Professors Reordered)",
+                aspect="auto",
+                text_auto=True
+            )
+            
+            fig_clustered_prof.update_layout(
+                height=max(800, len(courses) * 20),
+                width=max(1200, len(prof_order) * 40),
+                font=dict(size=10),
+                xaxis=dict(
+                    tickangle=90, 
+                    title="Staff Members (Clustered Order)",
+                    tickmode='array',
+                    tickvals=list(range(len(prof_order))),
+                    ticktext=prof_order
+                ),
+                yaxis=dict(
+                    title="Courses",
+                    tickmode='array',
+                    tickvals=list(range(len(courses))),
+                    ticktext=courses,
+                    tickfont=dict(size=9)
+                )
+            )
+            
+            st.plotly_chart(fig_clustered_prof, use_container_width=True)
+    
+    # Navigation buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("← Back to Data Analysis"):
+            st.session_state.step = 2
+            st.rerun()
+    
+    with col2:
+        if st.button("Run Optimization →", type="primary"):
+            # For Excel upload path
+            if 'course_offerings' in st.session_state:
+                st.session_state.step = 4
+            else:
+                # For manual input path - need to go back to set preferences if not done
+                st.warning("Please complete all data entry steps first")
+            st.rerun()
+    
+    if clustering_type == "Course Clustering (Which courses are similar?)":
+        st.markdown("**Clusters courses based on which professors prefer them similarly**")
+        
+        # Course preferences: courses as rows, professors as columns
+        # For clustering courses, we need courses as observations (rows)
+        course_matrix_for_clustering = course_pref_matrix  # Already has courses as rows
+        
+        # Check if we have enough courses for clustering
+        if len(courses) < 2:
+            st.warning("Need at least 2 courses for clustering analysis")
+        else:
+            # Calculate linkage using the course matrix directly
+            linkage_matrix = linkage(course_matrix_for_clustering.values, method='ward')
+            
+            fig_dendro = go.Figure()
+            
+            dendro_data = dendrogram(linkage_matrix, labels=courses, no_plot=True)
+            
+            icoord = np.array(dendro_data['icoord'])
+            dcoord = np.array(dendro_data['dcoord'])
+            
+            for i in range(len(icoord)):
+                fig_dendro.add_trace(go.Scatter(
+                    x=icoord[i],
+                    y=dcoord[i],
+                    mode='lines',
+                    line=dict(color='rgb(100,100,100)', width=1),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            fig_dendro.update_layout(
+                title="Course Dendrogram - Hierarchical Clustering",
+                xaxis=dict(
+                    title="Courses",
+                    tickvals=list(range(5, len(courses)*10+5, 10)),
+                    ticktext=dendro_data['ivl'],
+                    tickangle=90
+                ),
+                yaxis=dict(title="Distance (Ward Linkage)"),
+                height=600,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_dendro, use_container_width=True)
+            
+            st.markdown("**Clustered Heatmap (Courses reordered by similarity)**")
+            
+            course_order = [courses[i] for i in dendro_data['leaves']]
+            clustered_matrix = course_pref_matrix.loc[course_order, :]
+            
+            fig_clustered = px.imshow(
+                clustered_matrix.values,
+                labels=dict(x="Professor", y="Course", color="Preference Score"),
+                x=clustered_matrix.columns.tolist(),
+                y=clustered_matrix.index.tolist(),
+                color_continuous_scale="RdYlGn",
+                range_color=[0, 10],
+                title="Clustered Course Preferences (Courses Reordered)",
+                aspect="auto",
+                text_auto=True
+            )
+            
+            fig_clustered.update_layout(
+                height=max(800, len(courses) * 20),
+                width=max(1200, len(professors) * 40),
+                font=dict(size=10),
+                xaxis=dict(tickangle=90, title="Staff Members"),
+                yaxis=dict(
+                    title="Courses (Clustered Order)",
+                    tickmode='array',
+                    tickvals=list(range(len(course_order))),
+                    ticktext=course_order,
+                    tickfont=dict(size=9)
+                )
+            )import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -1471,6 +1854,271 @@ def show_data_analysis_step():
     st.subheader("Hierarchical Clustering Dendrograms")
     st.markdown("**View hierarchical relationships in the data**")
     
+    # Option 5: Side-by-Side PCA Comparison with Cluster Relationships
+    try:
+        from sklearn.decomposition import PCA
+        from sklearn.cluster import KMeans
+        from sklearn.preprocessing import StandardScaler
+        import networkx as nx
+        
+        st.subheader("Cluster Relationship Analysis")
+        st.markdown("**Analyze relationships between professor clusters and course clusters**")
+        
+        n_clusters_analysis = st.selectbox(
+            "Select number of clusters for relationship analysis:",
+            options=[2, 3, 4, 5],
+            index=1,
+            key="cluster_relationship_select",
+            help="Choose K for both professor and course clustering"
+        )
+        
+        # Perform clustering for both courses and professors
+        if len(courses) >= 2 and len(professors) >= 2:
+            # Course clustering
+            scaler_courses = StandardScaler()
+            course_data_scaled = scaler_courses.fit_transform(course_pref_matrix.values)
+            kmeans_courses = KMeans(n_clusters=n_clusters_analysis, random_state=42, n_init=10)
+            course_cluster_labels = kmeans_courses.fit_predict(course_data_scaled)
+            
+            # Professor clustering
+            scaler_profs = StandardScaler()
+            prof_data_scaled = scaler_profs.fit_transform(course_pref_matrix.T.values)
+            kmeans_profs = KMeans(n_clusters=n_clusters_analysis, random_state=42, n_init=10)
+            prof_cluster_labels = kmeans_profs.fit_predict(prof_data_scaled)
+            
+            # Create mapping dictionaries
+            course_to_cluster = {courses[i]: course_cluster_labels[i] for i in range(len(courses))}
+            prof_to_cluster = {professors[i]: prof_cluster_labels[i] for i in range(len(professors))}
+            
+            # OPTION 5: Side-by-Side PCA Plots
+            st.markdown("### Side-by-Side PCA Visualization")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Course Clusters**")
+                pca_courses = PCA(n_components=2)
+                pca_courses_result = pca_courses.fit_transform(course_data_scaled)
+                
+                pca_courses_df = pd.DataFrame({
+                    'PC1': pca_courses_result[:, 0],
+                    'PC2': pca_courses_result[:, 1],
+                    'Course': courses,
+                    'Cluster': [f'C{i+1}' for i in course_cluster_labels]
+                })
+                
+                fig_courses_pca = px.scatter(
+                    pca_courses_df,
+                    x='PC1',
+                    y='PC2',
+                    color='Cluster',
+                    text='Course',
+                    title=f'Courses - {n_clusters_analysis} Clusters',
+                    color_discrete_sequence=px.colors.qualitative.Set2
+                )
+                
+                fig_courses_pca.update_traces(
+                    textposition='top center',
+                    marker=dict(size=10, line=dict(width=1.5, color='white'))
+                )
+                
+                fig_courses_pca.update_layout(height=500, showlegend=True)
+                st.plotly_chart(fig_courses_pca, use_container_width=True)
+            
+            with col2:
+                st.markdown("**Professor Clusters**")
+                pca_profs = PCA(n_components=2)
+                pca_profs_result = pca_profs.fit_transform(prof_data_scaled)
+                
+                pca_profs_df = pd.DataFrame({
+                    'PC1': pca_profs_result[:, 0],
+                    'PC2': pca_profs_result[:, 1],
+                    'Professor': professors,
+                    'Cluster': [f'P{i+1}' for i in prof_cluster_labels]
+                })
+                
+                fig_profs_pca = px.scatter(
+                    pca_profs_df,
+                    x='PC1',
+                    y='PC2',
+                    color='Cluster',
+                    text='Professor',
+                    title=f'Professors - {n_clusters_analysis} Clusters',
+                    color_discrete_sequence=px.colors.qualitative.Pastel
+                )
+                
+                fig_profs_pca.update_traces(
+                    textposition='top center',
+                    marker=dict(size=10, line=dict(width=1.5, color='white'))
+                )
+                
+                fig_profs_pca.update_layout(height=500, showlegend=True)
+                st.plotly_chart(fig_profs_pca, use_container_width=True)
+            
+            # Cross-cluster affinity matrix
+            st.markdown("### Cross-Cluster Affinity Matrix")
+            st.markdown("**Average preference scores between professor clusters and course clusters**")
+            
+            affinity_matrix = np.zeros((n_clusters_analysis, n_clusters_analysis))
+            count_matrix = np.zeros((n_clusters_analysis, n_clusters_analysis))
+            
+            for i, prof in enumerate(professors):
+                prof_cluster = prof_cluster_labels[i]
+                for j, course in enumerate(courses):
+                    course_cluster = course_cluster_labels[j]
+                    pref_score = course_pref_matrix.loc[course, prof]
+                    affinity_matrix[prof_cluster, course_cluster] += pref_score
+                    count_matrix[prof_cluster, course_cluster] += 1
+            
+            # Calculate averages
+            affinity_matrix = np.divide(affinity_matrix, count_matrix, 
+                                       where=count_matrix!=0, 
+                                       out=np.zeros_like(affinity_matrix))
+            
+            # Create affinity heatmap
+            fig_affinity = px.imshow(
+                affinity_matrix,
+                labels=dict(x="Course Cluster", y="Professor Cluster", color="Avg Preference"),
+                x=[f'C{i+1}' for i in range(n_clusters_analysis)],
+                y=[f'P{i+1}' for i in range(n_clusters_analysis)],
+                color_continuous_scale="RdYlGn",
+                title="Professor-Course Cluster Affinity",
+                text_auto='.2f'
+            )
+            
+            fig_affinity.update_layout(height=400, width=500)
+            st.plotly_chart(fig_affinity, use_container_width=True)
+            
+            # Summary table of strongest relationships
+            st.markdown("### Strongest Cluster Relationships")
+            relationships = []
+            for p_cluster in range(n_clusters_analysis):
+                for c_cluster in range(n_clusters_analysis):
+                    avg_pref = affinity_matrix[p_cluster, c_cluster]
+                    if avg_pref > 0:
+                        prof_members = [p for p, c in prof_to_cluster.items() if c == p_cluster]
+                        course_members = [co for co, cl in course_to_cluster.items() if cl == c_cluster]
+                        relationships.append({
+                            'Professor Cluster': f'P{p_cluster+1}',
+                            'Course Cluster': f'C{c_cluster+1}',
+                            'Avg Preference': f'{avg_pref:.2f}',
+                            'Professors': ', '.join(prof_members),
+                            'Courses': ', '.join(course_members)
+                        })
+            
+            relationships_df = pd.DataFrame(relationships)
+            relationships_df = relationships_df.sort_values('Avg Preference', ascending=False)
+            st.dataframe(relationships_df, hide_index=True, use_container_width=True)
+            
+            # OPTION 1: Bipartite Network Graph
+            st.markdown("### Bipartite Network Graph")
+            st.markdown("**Network showing connections between professor and course clusters**")
+            
+            # Create bipartite graph
+            G = nx.Graph()
+            
+            # Add professor cluster nodes
+            prof_cluster_nodes = [f'Prof_C{i+1}' for i in range(n_clusters_analysis)]
+            course_cluster_nodes = [f'Course_C{i+1}' for i in range(n_clusters_analysis)]
+            
+            # Add all nodes
+            G.add_nodes_from(prof_cluster_nodes, bipartite=0)
+            G.add_nodes_from(course_cluster_nodes, bipartite=1)
+            
+            # Add edges with weights based on affinity
+            edge_threshold = 5.0  # Only show edges with avg preference >= 5
+            for p_cluster in range(n_clusters_analysis):
+                for c_cluster in range(n_clusters_analysis):
+                    weight = affinity_matrix[p_cluster, c_cluster]
+                    if weight >= edge_threshold:
+                        G.add_edge(f'Prof_C{p_cluster+1}', 
+                                 f'Course_C{c_cluster+1}', 
+                                 weight=weight)
+            
+            # Create layout
+            pos = {}
+            # Professor clusters on the left
+            for i, node in enumerate(prof_cluster_nodes):
+                pos[node] = (0, i * 2)
+            # Course clusters on the right
+            for i, node in enumerate(course_cluster_nodes):
+                pos[node] = (3, i * 2)
+            
+            # Create plotly network graph
+            edge_trace = []
+            for edge in G.edges(data=True):
+                x0, y0 = pos[edge[0]]
+                x1, y1 = pos[edge[1]]
+                weight = edge[2]['weight']
+                
+                edge_trace.append(go.Scatter(
+                    x=[x0, x1, None],
+                    y=[y0, y1, None],
+                    mode='lines',
+                    line=dict(width=weight/2, color='rgba(125,125,125,0.5)'),
+                    hoverinfo='text',
+                    text=f'Avg Pref: {weight:.2f}',
+                    showlegend=False
+                ))
+            
+            # Professor cluster nodes
+            prof_node_trace = go.Scatter(
+                x=[pos[node][0] for node in prof_cluster_nodes],
+                y=[pos[node][1] for node in prof_cluster_nodes],
+                mode='markers+text',
+                marker=dict(size=30, color='lightblue', line=dict(width=2, color='darkblue')),
+                text=prof_cluster_nodes,
+                textposition='middle left',
+                textfont=dict(size=12),
+                name='Professor Clusters',
+                hoverinfo='text',
+                hovertext=[f"{node}<br>" + "<br>".join([p for p, c in prof_to_cluster.items() if c == i]) 
+                          for i, node in enumerate(prof_cluster_nodes)]
+            )
+            
+            # Course cluster nodes
+            course_node_trace = go.Scatter(
+                x=[pos[node][0] for node in course_cluster_nodes],
+                y=[pos[node][1] for node in course_cluster_nodes],
+                mode='markers+text',
+                marker=dict(size=30, color='lightcoral', line=dict(width=2, color='darkred')),
+                text=course_cluster_nodes,
+                textposition='middle right',
+                textfont=dict(size=12),
+                name='Course Clusters',
+                hoverinfo='text',
+                hovertext=[f"{node}<br>" + "<br>".join([co for co, cl in course_to_cluster.items() if cl == i]) 
+                          for i, node in enumerate(course_cluster_nodes)]
+            )
+            
+            # Create figure
+            fig_network = go.Figure(data=edge_trace + [prof_node_trace, course_node_trace])
+            
+            fig_network.update_layout(
+                title='Bipartite Network: Professor Clusters ↔ Course Clusters',
+                showlegend=True,
+                hovermode='closest',
+                height=600,
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                plot_bgcolor='white'
+            )
+            
+            st.plotly_chart(fig_network, use_container_width=True)
+            
+            st.info(f"Network shows connections where average preference ≥ {edge_threshold}. Line thickness represents preference strength.")
+            
+        else:
+            st.warning("Need at least 2 courses and 2 professors for relationship analysis")
+        
+        st.markdown("---")
+        
+    except ImportError:
+        st.info("Install scikit-learn and networkx for cluster relationship analysis: `pip install scikit-learn networkx`")
+    
+    st.subheader("Hierarchical Clustering Dendrograms")
+    st.markdown("**View hierarchical relationships in the data**")
+    
     if clustering_type == "Course Clustering (Which courses are similar?)":
         st.markdown("**Clusters courses based on which professors prefer them similarly**")
         
@@ -1847,3 +2495,4 @@ def create_excel_template_structured():
 if __name__ == "__main__":
     main()
 
+            
