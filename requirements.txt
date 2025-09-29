@@ -7,4 +7,6 @@ xlsxwriter
 openpyxl
 scipy
 scikit-learn
+networkx
+
 
