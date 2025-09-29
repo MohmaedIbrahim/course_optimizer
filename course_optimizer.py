@@ -226,12 +226,12 @@ class CourseCoveringProblem:
 
 def main():
     st.set_page_config(
-        page_title="RASTA-OP - Course Assignment Optimizer",
-        page_icon="🎓",
+        page_title="RASTA-OP",
+        page_icon="��",
         layout="wide"
     )
     
-    st.title("🎓 RASTA-OP - Course Assignment Optimizer")
+    st.title("RASTA-OP")
     st.markdown("Optimize faculty assignments using exact mathematical formulation with L_jk and b_j constraints")
     st.markdown("---")
     
@@ -732,7 +732,7 @@ def show_results_step():
             st.rerun()
     
     with col2:
-        if st.button("🔄 Start Over"):
+        if st.button("Start Over"):
             # Reset all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -1115,7 +1115,7 @@ def show_results_step():
             workload_data.append({
                 'Professor': professor,
                 'Total Courses': f"{total_courses}/{max_total}",
-                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%"
+                'Total Utilization %': f"{(total_courses/max_total)*100:.1f}%" if max_total > 0 else "N/A"
             })
             
             # L_jk constraint check per term
@@ -1140,7 +1140,7 @@ def show_results_step():
                 streams = course_streams.get((course, term), 1)
                 st.error(f"**{course}** in **{term}** ({streams} streams) - Could not assign")
         else:
-            st.success("🎉 All course offerings successfully assigned!")
+            st.success("All course offerings successfully assigned!")
             
     elif solution['status'] == 'Infeasible':
         st.error("❌ Problem is infeasible - no solution exists")
@@ -1167,7 +1167,7 @@ def show_results_step():
             st.rerun()
     
     with col2:
-        if st.button("🔄 Start Over"):
+        if st.button("Start Over"):
             # Reset all session state
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
@@ -1696,148 +1696,6 @@ def show_data_analysis_step():
         term_range = f"{term_pref_matrix.min().min():.0f} - {term_pref_matrix.max().max():.0f}"
         st.metric("Term Preference Range", term_range)
     
-    # Hierarchical Clustering Analysis for Course Preferences
-    st.subheader("Hierarchical Clustering Analysis (c_ij)")
-    st.markdown("**Clustering professors based on similar course preference patterns**")
-    
-    try:
-        from scipy.cluster.hierarchy import dendrogram, linkage
-        from scipy.spatial.distance import pdist, squareform
-        
-        # Transpose matrix so each row is a professor (needed for clustering)
-        prof_preference_matrix = course_pref_matrix.T  # Professors as rows, courses as columns
-        
-        # Compute linkage matrix using Ward's method
-        linkage_matrix = linkage(prof_preference_matrix.values, method='ward')
-        
-        # Create dendrogram
-        fig_dendro = go.Figure()
-        
-        # Calculate dendrogram
-        dend = dendrogram(linkage_matrix, labels=professors, no_plot=True)
-        
-        # Extract dendrogram data
-        icoord = np.array(dend['icoord'])
-        dcoord = np.array(dend['dcoord'])
-        
-        # Plot dendrogram lines with thicker lines
-        for i in range(len(icoord)):
-            fig_dendro.add_trace(go.Scatter(
-                x=icoord[i],
-                y=dcoord[i],
-                mode='lines',
-                line=dict(color='rgb(50,50,150)', width=3),  # Thicker, more visible lines
-                showlegend=False,
-                hoverinfo='skip'
-            ))
-        
-        # Add professor labels with bold formatting
-        xpos = [(i * 10) + 5 for i in range(len(professors))]
-        fig_dendro.add_trace(go.Scatter(
-            x=xpos,
-            y=[0] * len(professors),
-            mode='text',
-            text=[f"<b>{name}</b>" for name in dend['ivl']],  # Bold names
-            textposition='bottom center',
-            textfont=dict(size=12, family='Arial Black'),  # Larger, bolder font
-            showlegend=False,
-            hoverinfo='text',
-            hovertext=[f"<b>{name}</b>" for name in dend['ivl']]
-        ))
-        
-        fig_dendro.update_layout(
-            title=dict(
-                text="<b>Hierarchical Clustering of Staff Based on Course Preferences</b>",
-                font=dict(size=16, family='Arial Black')
-            ),
-            xaxis=dict(
-                title="<b>Staff Members</b>", 
-                showticklabels=False,
-                titlefont=dict(size=14, family='Arial Black')
-            ),
-            yaxis=dict(
-                title="<b>Distance (Ward's Method)</b>",
-                titlefont=dict(size=14, family='Arial Black'),
-                tickfont=dict(size=12, family='Arial Black')
-            ),
-            height=600,
-            showlegend=False,
-            hovermode='closest',
-            plot_bgcolor='rgba(240,240,240,0.5)'
-        )
-        
-        st.plotly_chart(fig_dendro, use_container_width=True)
-        
-        # Interpretation guide
-        with st.expander("ℹ️ How to interpret the dendrogram"):
-            st.markdown("""
-            **What is this showing?**
-            - The dendrogram groups professors who have similar course preference patterns
-            - Professors who merge at lower heights (closer to the bottom) have more similar preferences
-            - The height of the connection shows how different the groups are
-            
-            **How to use this:**
-            - **Similar preferences:** Professors connected at low heights could potentially substitute for each other
-            - **Distinct preferences:** Professors connected at high heights have very different teaching interests
-            - **Clusters:** Groups that merge together indicate staff with complementary skills
-            
-            **Method:** Uses Ward's linkage with Euclidean distance to minimize variance within clusters
-            """)
-        
-        # Calculate and display cluster statistics
-        st.subheader("Clustering Insights")
-        
-        # Calculate pairwise distances between professors
-        distances = pdist(prof_preference_matrix.values, metric='euclidean')
-        dist_matrix = squareform(distances)
-        
-        # Most similar pair (excluding self-comparisons)
-        np.fill_diagonal(dist_matrix, np.inf)
-        min_idx = np.unravel_index(np.argmin(dist_matrix), dist_matrix.shape)
-        most_similar = (professors[min_idx[0]], professors[min_idx[1]], dist_matrix[min_idx])
-        
-        # Most different pair
-        np.fill_diagonal(dist_matrix, 0)  # Reset diagonal
-        max_idx = np.unravel_index(np.argmax(dist_matrix), dist_matrix.shape)
-        most_different = (professors[max_idx[0]], professors[max_idx[1]], dist_matrix[max_idx])
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("### Most Similar Staff")
-            st.markdown(f"""
-            <div style='background-color: #e8f4f8; padding: 20px; border-radius: 10px; border-left: 5px solid #2196F3;'>
-                <h3 style='color: #1976D2; margin-top: 0;'>{most_similar[0]}</h3>
-                <h4 style='color: #424242; margin: 10px 0;'>and</h4>
-                <h3 style='color: #1976D2;'>{most_similar[1]}</h3>
-                <hr style='border: 1px solid #90CAF9; margin: 15px 0;'>
-                <p style='font-size: 18px; margin: 0;'><b>Distance:</b> <span style='color: #1976D2; font-size: 24px; font-weight: bold;'>{most_similar[2]:.2f}</span></p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.caption("Lower distance = more similar preferences")
-            
-        with col2:
-            st.markdown("### Most Different Staff")
-            st.markdown(f"""
-            <div style='background-color: #fff3e0; padding: 20px; border-radius: 10px; border-left: 5px solid #FF9800;'>
-                <h3 style='color: #F57C00; margin-top: 0;'>{most_different[0]}</h3>
-                <h4 style='color: #424242; margin: 10px 0;'>and</h4>
-                <h3 style='color: #F57C00;'>{most_different[1]}</h3>
-                <hr style='border: 1px solid #FFB74D; margin: 15px 0;'>
-                <p style='font-size: 18px; margin: 0;'><b>Distance:</b> <span style='color: #F57C00; font-size: 24px; font-weight: bold;'>{most_different[2]:.2f}</span></p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.caption("Higher distance = very different preferences")
-        
-        # Calculate average distance for context
-        avg_distance = np.mean(distances)
-        st.markdown("---")
-        st.markdown(f"**Average Distance Between All Staff:** <span style='font-size: 20px; font-weight: bold; color: #424242;'>{avg_distance:.2f}</span>", unsafe_allow_html=True)
-        
-    except ImportError:
-        st.warning("⚠️ Hierarchical clustering requires scipy. Please add 'scipy' to your requirements.txt file and restart the application.")
-    except Exception as e:
-        st.error(f"Error performing clustering analysis: {str(e)}")
-    
     # Navigation
     col1, col2 = st.columns(2)
     with col1:
@@ -1965,3 +1823,9 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
