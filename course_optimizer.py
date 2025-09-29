@@ -1228,7 +1228,7 @@ def show_results_step():
     with col3:
         st.metric("Unassigned", len(solution.get('unassigned_offerings', [])))
     
-      if solution['status'] == 'Optimal':
+    if solution['status'] == 'Optimal':
         # Course Assignment Matrix - All Terms (First Priority)
         st.subheader("Course Assignment Matrix - All Terms Combined")
         st.markdown("**1 = Course assigned to professor, 0 = Not assigned**")
