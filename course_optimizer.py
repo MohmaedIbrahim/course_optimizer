@@ -1702,7 +1702,7 @@ def show_data_analysis_step():
     
     try:
         from scipy.cluster.hierarchy import dendrogram, linkage
-        from scipy.spatial.distance import pdist
+        from scipy.spatial.distance import pdist, squareform
         
         # Transpose matrix so each row is a professor (needed for clustering)
         prof_preference_matrix = course_pref_matrix.T  # Professors as rows, courses as columns
@@ -1719,40 +1719,51 @@ def show_data_analysis_step():
         # Extract dendrogram data
         icoord = np.array(dend['icoord'])
         dcoord = np.array(dend['dcoord'])
-        colors = dend['leaves_color_list']
         
-        # Plot dendrogram lines
+        # Plot dendrogram lines with thicker lines
         for i in range(len(icoord)):
             fig_dendro.add_trace(go.Scatter(
                 x=icoord[i],
                 y=dcoord[i],
                 mode='lines',
-                line=dict(color='rgb(100,100,100)', width=2),
+                line=dict(color='rgb(50,50,150)', width=3),  # Thicker, more visible lines
                 showlegend=False,
                 hoverinfo='skip'
             ))
         
-        # Add professor labels
+        # Add professor labels with bold formatting
         xpos = [(i * 10) + 5 for i in range(len(professors))]
         fig_dendro.add_trace(go.Scatter(
             x=xpos,
             y=[0] * len(professors),
             mode='text',
-            text=dend['ivl'],
+            text=[f"<b>{name}</b>" for name in dend['ivl']],  # Bold names
             textposition='bottom center',
-            textfont=dict(size=10),
+            textfont=dict(size=12, family='Arial Black'),  # Larger, bolder font
             showlegend=False,
             hoverinfo='text',
-            hovertext=dend['ivl']
+            hovertext=[f"<b>{name}</b>" for name in dend['ivl']]
         ))
         
         fig_dendro.update_layout(
-            title="Hierarchical Clustering of Staff Based on Course Preferences",
-            xaxis=dict(title="Staff Members", showticklabels=False),
-            yaxis=dict(title="Distance (Ward's Method)"),
-            height=500,
+            title=dict(
+                text="<b>Hierarchical Clustering of Staff Based on Course Preferences</b>",
+                font=dict(size=16, family='Arial Black')
+            ),
+            xaxis=dict(
+                title="<b>Staff Members</b>", 
+                showticklabels=False,
+                titlefont=dict(size=14, family='Arial Black')
+            ),
+            yaxis=dict(
+                title="<b>Distance (Ward's Method)</b>",
+                titlefont=dict(size=14, family='Arial Black'),
+                tickfont=dict(size=12, family='Arial Black')
+            ),
+            height=600,
             showlegend=False,
-            hovermode='closest'
+            hovermode='closest',
+            plot_bgcolor='rgba(240,240,240,0.5)'
         )
         
         st.plotly_chart(fig_dendro, use_container_width=True)
@@ -1778,9 +1789,6 @@ def show_data_analysis_step():
         
         # Calculate pairwise distances between professors
         distances = pdist(prof_preference_matrix.values, metric='euclidean')
-        
-        # Find most similar and most different professor pairs
-        from scipy.spatial.distance import squareform
         dist_matrix = squareform(distances)
         
         # Most similar pair (excluding self-comparisons)
@@ -1789,20 +1797,44 @@ def show_data_analysis_step():
         most_similar = (professors[min_idx[0]], professors[min_idx[1]], dist_matrix[min_idx])
         
         # Most different pair
-        max_idx = np.unravel_index(np.argmax(dist_matrix[dist_matrix != np.inf]), dist_matrix.shape)
+        np.fill_diagonal(dist_matrix, 0)  # Reset diagonal
+        max_idx = np.unravel_index(np.argmax(dist_matrix), dist_matrix.shape)
         most_different = (professors[max_idx[0]], professors[max_idx[1]], dist_matrix[max_idx])
         
         col1, col2 = st.columns(2)
         with col1:
-            st.write("**Most Similar Staff:**")
-            st.info(f"{most_similar[0]} and {most_similar[1]}\n\nDistance: {most_similar[2]:.2f}")
+            st.markdown("### Most Similar Staff")
+            st.markdown(f"""
+            <div style='background-color: #e8f4f8; padding: 20px; border-radius: 10px; border-left: 5px solid #2196F3;'>
+                <h3 style='color: #1976D2; margin-top: 0;'>{most_similar[0]}</h3>
+                <h4 style='color: #424242; margin: 10px 0;'>and</h4>
+                <h3 style='color: #1976D2;'>{most_similar[1]}</h3>
+                <hr style='border: 1px solid #90CAF9; margin: 15px 0;'>
+                <p style='font-size: 18px; margin: 0;'><b>Distance:</b> <span style='color: #1976D2; font-size: 24px; font-weight: bold;'>{most_similar[2]:.2f}</span></p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption("Lower distance = more similar preferences")
             
         with col2:
-            st.write("**Most Different Staff:**")
-            st.info(f"{most_different[0]} and {most_different[1]}\n\nDistance: {most_different[2]:.2f}")
+            st.markdown("### Most Different Staff")
+            st.markdown(f"""
+            <div style='background-color: #fff3e0; padding: 20px; border-radius: 10px; border-left: 5px solid #FF9800;'>
+                <h3 style='color: #F57C00; margin-top: 0;'>{most_different[0]}</h3>
+                <h4 style='color: #424242; margin: 10px 0;'>and</h4>
+                <h3 style='color: #F57C00;'>{most_different[1]}</h3>
+                <hr style='border: 1px solid #FFB74D; margin: 15px 0;'>
+                <p style='font-size: 18px; margin: 0;'><b>Distance:</b> <span style='color: #F57C00; font-size: 24px; font-weight: bold;'>{most_different[2]:.2f}</span></p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.caption("Higher distance = very different preferences")
+        
+        # Calculate average distance for context
+        avg_distance = np.mean(distances)
+        st.markdown("---")
+        st.markdown(f"**Average Distance Between All Staff:** <span style='font-size: 20px; font-weight: bold; color: #424242;'>{avg_distance:.2f}</span>", unsafe_allow_html=True)
         
     except ImportError:
-        st.warning("Hierarchical clustering requires scipy. Install scipy to enable this feature.")
+        st.warning("⚠️ Hierarchical clustering requires scipy. Please add 'scipy' to your requirements.txt file and restart the application.")
     except Exception as e:
         st.error(f"Error performing clustering analysis: {str(e)}")
     
