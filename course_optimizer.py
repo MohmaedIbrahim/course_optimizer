@@ -1177,7 +1177,7 @@ def show_clustering_analysis_step():
             st.rerun()
     
     with col2:
-        if st.button("Run Clustering →", type="primary"):
+        if st.button("Run Optimization →", type="primary"):
             if 'course_offerings' in st.session_state:
                 st.session_state.step = 4
             else:
@@ -1567,7 +1567,7 @@ def show_preferences_step():
             st.rerun()
     
     with col2:
-        if st.button("Run Clustering", type="primary"):
+        if st.button("Run Optimization", type="primary"):
             st.session_state.step = 4
             st.rerun()
 
@@ -2333,7 +2333,7 @@ def show_data_analysis_step():
             st.rerun()
     
     with col2:
-        if st.button("Run Optimization →", type="primary"):
+        if st.button("Run Clustering →", type="primary"):
             st.session_state.step = 3
             st.rerun()
 
@@ -2452,4 +2452,5 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
+
 
