@@ -6,4 +6,5 @@ numpy
 xlsxwriter
 openpyxl
 scipy
+scikit-learn
 
