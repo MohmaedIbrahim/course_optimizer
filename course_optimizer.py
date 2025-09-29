@@ -1029,152 +1029,166 @@ def show_data_analysis_step():
     if clustering_type == "Course Clustering (Which courses are similar?)":
         st.markdown("**Clusters courses based on which professors prefer them similarly**")
         
-        course_matrix_for_clustering = course_pref_matrix.T
+        # Course preferences: courses as rows, professors as columns
+        # For clustering courses, we need courses as observations (rows)
+        course_matrix_for_clustering = course_pref_matrix  # Already has courses as rows
         
-        linkage_matrix = linkage(course_matrix_for_clustering, method='ward')
-        
-        fig_dendro = go.Figure()
-        
-        dendro_data = dendrogram(linkage_matrix, labels=courses, no_plot=True)
-        
-        icoord = np.array(dendro_data['icoord'])
-        dcoord = np.array(dendro_data['dcoord'])
-        
-        for i in range(len(icoord)):
-            fig_dendro.add_trace(go.Scatter(
-                x=icoord[i],
-                y=dcoord[i],
-                mode='lines',
-                line=dict(color='rgb(100,100,100)', width=1),
-                showlegend=False,
-                hoverinfo='skip'
-            ))
-        
-        fig_dendro.update_layout(
-            title="Course Dendrogram - Hierarchical Clustering",
-            xaxis=dict(
-                title="Courses",
-                tickvals=list(range(5, len(courses)*10+5, 10)),
-                ticktext=dendro_data['ivl'],
-                tickangle=90
-            ),
-            yaxis=dict(title="Distance (Ward Linkage)"),
-            height=600,
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig_dendro, use_container_width=True)
-        
-        st.markdown("**Clustered Heatmap (Courses reordered by similarity)**")
-        
-        course_order = [courses[i] for i in dendro_data['leaves']]
-        clustered_matrix = course_pref_matrix.loc[course_order, :]
-        
-        fig_clustered = px.imshow(
-            clustered_matrix.values,
-            labels=dict(x="Professor", y="Course", color="Preference Score"),
-            x=clustered_matrix.columns.tolist(),
-            y=clustered_matrix.index.tolist(),
-            color_continuous_scale="RdYlGn",
-            range_color=[0, 10],
-            title="Clustered Course Preferences (Courses Reordered)",
-            aspect="auto",
-            text_auto=True
-        )
-        
-        fig_clustered.update_layout(
-            height=max(800, len(courses) * 20),
-            width=max(1200, len(professors) * 40),
-            font=dict(size=10),
-            xaxis=dict(tickangle=90, title="Staff Members"),
-            yaxis=dict(
-                title="Courses (Clustered Order)",
-                tickmode='array',
-                tickvals=list(range(len(course_order))),
-                ticktext=course_order,
-                tickfont=dict(size=9)
+        # Check if we have enough courses for clustering
+        if len(courses) < 2:
+            st.warning("Need at least 2 courses for clustering analysis")
+        else:
+            # Calculate linkage using the course matrix directly
+            linkage_matrix = linkage(course_matrix_for_clustering.values, method='ward')
+            
+            fig_dendro = go.Figure()
+            
+            dendro_data = dendrogram(linkage_matrix, labels=courses, no_plot=True)
+            
+            icoord = np.array(dendro_data['icoord'])
+            dcoord = np.array(dendro_data['dcoord'])
+            
+            for i in range(len(icoord)):
+                fig_dendro.add_trace(go.Scatter(
+                    x=icoord[i],
+                    y=dcoord[i],
+                    mode='lines',
+                    line=dict(color='rgb(100,100,100)', width=1),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            fig_dendro.update_layout(
+                title="Course Dendrogram - Hierarchical Clustering",
+                xaxis=dict(
+                    title="Courses",
+                    tickvals=list(range(5, len(courses)*10+5, 10)),
+                    ticktext=dendro_data['ivl'],
+                    tickangle=90
+                ),
+                yaxis=dict(title="Distance (Ward Linkage)"),
+                height=600,
+                showlegend=False
             )
-        )
-        
-        st.plotly_chart(fig_clustered, use_container_width=True)
+            
+            st.plotly_chart(fig_dendro, use_container_width=True)
+            
+            st.markdown("**Clustered Heatmap (Courses reordered by similarity)**")
+            
+            course_order = [courses[i] for i in dendro_data['leaves']]
+            clustered_matrix = course_pref_matrix.loc[course_order, :]
+            
+            fig_clustered = px.imshow(
+                clustered_matrix.values,
+                labels=dict(x="Professor", y="Course", color="Preference Score"),
+                x=clustered_matrix.columns.tolist(),
+                y=clustered_matrix.index.tolist(),
+                color_continuous_scale="RdYlGn",
+                range_color=[0, 10],
+                title="Clustered Course Preferences (Courses Reordered)",
+                aspect="auto",
+                text_auto=True
+            )
+            
+            fig_clustered.update_layout(
+                height=max(800, len(courses) * 20),
+                width=max(1200, len(professors) * 40),
+                font=dict(size=10),
+                xaxis=dict(tickangle=90, title="Staff Members"),
+                yaxis=dict(
+                    title="Courses (Clustered Order)",
+                    tickmode='array',
+                    tickvals=list(range(len(course_order))),
+                    ticktext=course_order,
+                    tickfont=dict(size=9)
+                )
+            )
+            
+            st.plotly_chart(fig_clustered, use_container_width=True)
         
     else:
         st.markdown("**Clusters professors based on their course preference patterns**")
         
-        prof_matrix_for_clustering = course_pref_matrix.T
+        # For clustering professors, we need professors as observations (rows)
+        # Transpose so professors are rows
+        prof_matrix_for_clustering = course_pref_matrix.T  # Now professors are rows
         
-        linkage_matrix = linkage(prof_matrix_for_clustering.T, method='ward')
-        
-        fig_dendro_prof = go.Figure()
-        
-        dendro_data_prof = dendrogram(linkage_matrix, labels=professors, no_plot=True)
-        
-        icoord = np.array(dendro_data_prof['icoord'])
-        dcoord = np.array(dendro_data_prof['dcoord'])
-        
-        for i in range(len(icoord)):
-            fig_dendro_prof.add_trace(go.Scatter(
-                x=icoord[i],
-                y=dcoord[i],
-                mode='lines',
-                line=dict(color='rgb(100,100,100)', width=1),
-                showlegend=False,
-                hoverinfo='skip'
-            ))
-        
-        fig_dendro_prof.update_layout(
-            title="Professor Dendrogram - Hierarchical Clustering",
-            xaxis=dict(
-                title="Professors",
-                tickvals=list(range(5, len(professors)*10+5, 10)),
-                ticktext=dendro_data_prof['ivl'],
-                tickangle=90
-            ),
-            yaxis=dict(title="Distance (Ward Linkage)"),
-            height=600,
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig_dendro_prof, use_container_width=True)
-        
-        st.markdown("**Clustered Heatmap (Professors reordered by similarity)**")
-        
-        prof_order = [professors[i] for i in dendro_data_prof['leaves']]
-        clustered_matrix_prof = course_pref_matrix.loc[:, prof_order]
-        
-        fig_clustered_prof = px.imshow(
-            clustered_matrix_prof.values,
-            labels=dict(x="Professor", y="Course", color="Preference Score"),
-            x=clustered_matrix_prof.columns.tolist(),
-            y=clustered_matrix_prof.index.tolist(),
-            color_continuous_scale="RdYlGn",
-            range_color=[0, 10],
-            title="Clustered Course Preferences (Professors Reordered)",
-            aspect="auto",
-            text_auto=True
-        )
-        
-        fig_clustered_prof.update_layout(
-            height=max(800, len(courses) * 20),
-            width=max(1200, len(prof_order) * 40),
-            font=dict(size=10),
-            xaxis=dict(
-                tickangle=90, 
-                title="Staff Members (Clustered Order)",
-                tickmode='array',
-                tickvals=list(range(len(prof_order))),
-                ticktext=prof_order
-            ),
-            yaxis=dict(
-                title="Courses",
-                tickmode='array',
-                tickvals=list(range(len(courses))),
-                ticktext=courses,
-                tickfont=dict(size=9)
+        # Check if we have enough professors for clustering
+        if len(professors) < 2:
+            st.warning("Need at least 2 professors for clustering analysis")
+        else:
+            # Calculate linkage using professor matrix
+            linkage_matrix = linkage(prof_matrix_for_clustering.values, method='ward')
+            
+            fig_dendro_prof = go.Figure()
+            
+            dendro_data_prof = dendrogram(linkage_matrix, labels=professors, no_plot=True)
+            
+            icoord = np.array(dendro_data_prof['icoord'])
+            dcoord = np.array(dendro_data_prof['dcoord'])
+            
+            for i in range(len(icoord)):
+                fig_dendro_prof.add_trace(go.Scatter(
+                    x=icoord[i],
+                    y=dcoord[i],
+                    mode='lines',
+                    line=dict(color='rgb(100,100,100)', width=1),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            fig_dendro_prof.update_layout(
+                title="Professor Dendrogram - Hierarchical Clustering",
+                xaxis=dict(
+                    title="Professors",
+                    tickvals=list(range(5, len(professors)*10+5, 10)),
+                    ticktext=dendro_data_prof['ivl'],
+                    tickangle=90
+                ),
+                yaxis=dict(title="Distance (Ward Linkage)"),
+                height=600,
+                showlegend=False
             )
-        )
-        
-        st.plotly_chart(fig_clustered_prof, use_container_width=True)
+            
+            st.plotly_chart(fig_dendro_prof, use_container_width=True)
+            
+            st.markdown("**Clustered Heatmap (Professors reordered by similarity)**")
+            
+            prof_order = [professors[i] for i in dendro_data_prof['leaves']]
+            clustered_matrix_prof = course_pref_matrix.loc[:, prof_order]
+            
+            fig_clustered_prof = px.imshow(
+                clustered_matrix_prof.values,
+                labels=dict(x="Professor", y="Course", color="Preference Score"),
+                x=clustered_matrix_prof.columns.tolist(),
+                y=clustered_matrix_prof.index.tolist(),
+                color_continuous_scale="RdYlGn",
+                range_color=[0, 10],
+                title="Clustered Course Preferences (Professors Reordered)",
+                aspect="auto",
+                text_auto=True
+            )
+            
+            fig_clustered_prof.update_layout(
+                height=max(800, len(courses) * 20),
+                width=max(1200, len(prof_order) * 40),
+                font=dict(size=10),
+                xaxis=dict(
+                    tickangle=90, 
+                    title="Staff Members (Clustered Order)",
+                    tickmode='array',
+                    tickvals=list(range(len(prof_order))),
+                    ticktext=prof_order
+                ),
+                yaxis=dict(
+                    title="Courses",
+                    tickmode='array',
+                    tickvals=list(range(len(courses))),
+                    ticktext=courses,
+                    tickfont=dict(size=9)
+                )
+            )
+            
+            st.plotly_chart(fig_clustered_prof, use_container_width=True)
     
     st.subheader("Course Preference Analysis")
     
@@ -1387,7 +1401,4 @@ def create_excel_template_structured():
 
 if __name__ == "__main__":
     main()
-
-            
-
 
