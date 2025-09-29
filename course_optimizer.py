@@ -1035,12 +1035,11 @@ def show_data_analysis_step():
         st.subheader("PCA & K-Means Clustering Visualization")
         st.markdown("**Visualize data in 2D using Principal Component Analysis with K-Means clustering**")
         
-        # Number of clusters selector
-        n_clusters = st.slider(
+        # Number of clusters selector - dropdown instead of slider
+        n_clusters = st.selectbox(
             "Select number of clusters (K):",
-            min_value=2,
-            max_value=5,
-            value=3,
+            options=[2, 3, 4, 5],
+            index=1,  # Default to 3
             help="Choose how many clusters to identify in the data"
         )
         
@@ -1086,6 +1085,7 @@ def show_data_analysis_step():
                 
                 fig_pca.update_traces(
                     textposition='top center',
+                    textfont=dict(size=14, color='black', family='Arial Black'),
                     marker=dict(size=12, line=dict(width=2, color='white'))
                 )
                 
@@ -1165,6 +1165,7 @@ def show_data_analysis_step():
                 
                 fig_pca.update_traces(
                     textposition='top center',
+                    textfont=dict(size=14, color='black', family='Arial Black'),
                     marker=dict(size=12, line=dict(width=2, color='white'))
                 )
                 
@@ -1583,8 +1584,5 @@ def create_excel_template_structured():
         return None
 
 
-if __name__ == "__main__":
-    main()
-
-
-
+   2
+            """)
